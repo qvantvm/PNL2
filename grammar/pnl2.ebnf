@@ -1,0 +1,177 @@
+(* PNL/2 — Piano Notation Language
+   Formal grammar (EBNF)
+   Version: 2.0
+*)
+
+document          = version-header, newline, score-block ;
+version-header    = "pnl/2" ;
+score-block       = "score", whitespace, block ;
+
+block             = "{", newline,
+                    { statement },
+                    "}" ;
+
+statement         = meta-block
+                  | part-block
+                  | measure-block
+                  | staff-block
+                  | voice-block
+                  | notation-block
+                  | performance-block
+                  | event-statement
+                  | relation-statement
+                  | property-statement
+                  | comment
+                  | newline ;
+
+meta-block        = "meta", whitespace, block ;
+part-block        = "part", whitespace, identifier,
+                    { whitespace, property },
+                    whitespace, block ;
+measure-block     = "measure", whitespace, integer,
+                    { whitespace, property },
+                    whitespace, block ;
+staff-block       = "staff", whitespace, identifier,
+                    { whitespace, property },
+                    whitespace, block ;
+voice-block       = "voice", whitespace, identifier,
+                    { whitespace, property },
+                    whitespace, block ;
+notation-block    = "notation",
+                    { whitespace, property },
+                    whitespace, block ;
+performance-block = "performance",
+                    { whitespace, property },
+                    whitespace, block ;
+
+event-statement   = note-event
+                  | chord-event
+                  | rest-event
+                  | space-event
+                  | grace-event
+                  | grace-group-event
+                  | direction-event
+                  | analysis-event ;
+
+note-event        = "note", whitespace, identifier,
+                    whitespace, property-list, newline ;
+chord-event       = "chord", whitespace, identifier,
+                    { whitespace, property },
+                    whitespace, "{", newline,
+                    { tone-event },
+                    "}", newline ;
+tone-event        = "tone", whitespace, identifier,
+                    whitespace, property-list, newline ;
+rest-event        = "rest", whitespace, identifier,
+                    whitespace, property-list, newline ;
+space-event       = "space", whitespace,
+                    property-list, newline ;
+grace-event       = "grace", whitespace, identifier,
+                    whitespace, property-list, newline ;
+grace-group-event = "grace-group", whitespace, identifier,
+                    { whitespace, property },
+                    whitespace, "{", newline,
+                    { grace-event },
+                    "}", newline ;
+
+(* Directions: clef, key, meter, tempo, dynamic, hairpin, pedal, barline, etc. *)
+direction-event   = direction-keyword, whitespace,
+                    [ identifier, whitespace ],
+                    property-list, newline ;
+
+direction-keyword = "clef" | "key" | "meter" | "tempo" | "tempo-curve"
+                  | "dynamic" | "hairpin" | "pedal" | "pedal-curve"
+                  | "barline" | "ending" | "section" | "ottava"
+                  | "trill-span" | "tremolo" | "beam"
+                  | "point" ;
+
+analysis-event    = analysis-keyword, whitespace,
+                    identifier, whitespace,
+                    property-list, newline ;
+
+analysis-keyword  = "roman" | "chord-symbol" | "cadence"
+                  | "dissonance" | "prolongation" | "harmonic-edge"
+                  | "phrase" | "tonality" | "performed-note" ;
+
+relation-statement = relation-keyword, whitespace,
+                     identifier, whitespace,
+                     property-list, newline ;
+
+relation-keyword  = "slur" | "tie" | "phrase" | "beam"
+                  | "hairpin" | "pedal" | "ottava"
+                  | "trill-span" | "tremolo"
+                  | "harmonic-edge" | "prolongation"
+                  | "dissonance" | "cadence"
+                  | "ending" | "section" | "barline" ;
+
+property-statement = identifier, "=", value, newline ;
+property-list     = property,
+                    { whitespace, property } ;
+property          = identifier, "=", value ;
+
+value             = identifier
+                  | string
+                  | integer
+                  | rational
+                  | signed-integer
+                  | pitch
+                  | position
+                  | tuplet-ratio
+                  | finger-change
+                  | key-ref
+                  | list ;
+
+list              = "[", [ value, { ",", value } ], "]" ;
+
+rational          = positive-integer
+                  | positive-integer, "/", positive-integer ;
+
+(* measure:offset — e.g. 1:0, 2:1/4 *)
+position          = integer, ":", rational ;
+
+(* tuplet=3:2 or finger-change=4:5 *)
+tuplet-ratio      = positive-integer, ":", positive-integer ;
+finger-change     = digit, ":", digit ;
+
+(* key=C:major *)
+key-ref           = pitch-letter, [ accidental ], ":", identifier ;
+
+pitch             = pitch-letter,
+                    [ accidental ],
+                    signed-integer ;
+pitch-letter      = "A" | "B" | "C" | "D" | "E" | "F" | "G" ;
+accidental        = "bb" | "b" | "##" | "#" ;
+
+identifier        = letter,
+                    { letter | digit | "_" | "-" } ;
+string            = '"', { string-character }, '"' ;
+string-character  = escape-sequence | any-character-except-quote-or-backslash ;
+escape-sequence   = '\', '"' | '\', '\' ;
+
+integer           = "0" | positive-integer ;
+positive-integer  = nonzero-digit, { digit } ;
+signed-integer    = [ "+" | "-" ], integer ;
+digit             = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+nonzero-digit     = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+letter            = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J"
+                  | "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R" | "S" | "T"
+                  | "U" | "V" | "W" | "X" | "Y" | "Z"
+                  | "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j"
+                  | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t"
+                  | "u" | "v" | "w" | "x" | "y" | "z" ;
+
+newline           = "\n" ;
+whitespace        = " ", { " " } ;
+(* Horizontal whitespace may also include tabs in tolerant parsers. *)
+comment           = "//", { any-character-except-newline }, newline ;
+
+(* Reserved keywords — may not be used as identifiers *)
+(*
+  pnl score meta part measure staff voice notation performance
+  note tone chord rest space grace grace-group
+  slur tie phrase pedal pedal-curve point beam hairpin
+  tempo tempo-curve meter key clef
+  roman chord-symbol cadence section ending barline
+  dissonance prolongation harmonic-edge performed-note
+  tonality ottava trill-span tremolo dynamic
+*)
