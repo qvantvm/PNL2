@@ -1,0 +1,62 @@
+pnl/2
+score {
+    meta {
+        title="Polyphonic Pedal Example"
+        profile=[core,notation]
+    }
+    part piano instrument=piano staves=2 {
+        meter at=1:0 beats=4 beat-unit=1/4
+        key at=1:0 tonic=D mode=major
+        measure 1 {
+            staff RH {
+                voice soprano {
+                    note n1 pitch=F#5 dur=1/2 finger=3
+                    note n2 pitch=G5 dur=1/4 finger=4 art=[accent]
+                    note n3 pitch=A5 dur=1/4 finger=5
+                }
+                voice alto {
+                    note n4 pitch=D5 dur=1
+                }
+            }
+            staff LH {
+                voice bass {
+                    chord c1 dur=1/2 arpeggiate=up {
+                        tone n5 pitch=D2 finger=5
+                        tone n6 pitch=A2 finger=2
+                        tone n7 pitch=D3 finger=1
+                    }
+                    chord c2 dur=1/2 {
+                        tone n8 pitch=A2 finger=5
+                        tone n9 pitch=E3 finger=2
+                        tone n10 pitch=A3 finger=1
+                    }
+                }
+            }
+        }
+        measure 2 {
+            staff RH {
+                voice soprano {
+                    note n11 pitch=A5 dur=1/2 finger=5
+                    note n12 pitch=F#5 dur=1/2 finger=3
+                }
+                voice alto {
+                    note n13 pitch=D5 dur=1
+                }
+            }
+            staff LH {
+                voice bass {
+                    chord c3 dur=1 {
+                        tone n14 pitch=D2 finger=5
+                        tone n15 pitch=A2 finger=2
+                        tone n16 pitch=D3 finger=1
+                    }
+                }
+            }
+        }
+        tie tie1 from=n3 to=n11
+        slur sl1 from=n1 to=n12
+        pedal p1 type=sustain from=1:0 to=1:1/2 depth=1
+        pedal p2 type=sustain from=1:1/2 to=2:0 depth=1
+        pedal p3 type=sustain from=2:0 to=2:1 depth=1
+    }
+}
