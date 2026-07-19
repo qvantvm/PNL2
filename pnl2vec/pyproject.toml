@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pnl2vec"
+version = "0.1.0"
+description = "PNL/2 tokenization and embedding learning (skip-gram / CBOW)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "PNL/2 Contributors" }]
+keywords = ["music", "pnl2", "embeddings", "tokenization"]
+dependencies = [
+  # Install parent package first: pip install -e ..
+  "torch>=2.0",
+  "numpy>=1.24",
+  "PyYAML>=6.0",
+  "matplotlib>=3.7",
+  "scikit-learn>=1.3",
+  "plotly>=5.15",
+  "typer>=0.9",
+  "tqdm>=4.65",
+  "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+umap = ["umap-learn>=0.5"]
+
+[project.scripts]
+pnl2vec = "pnl2vec.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

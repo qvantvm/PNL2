@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+.venv/
+dist/
+build/
+
+# Generated corpora and training outputs
+data/raw/*.pnl
+data/processed/*
+!data/processed/.gitkeep
+artifacts/checkpoints/*
+artifacts/embeddings/*
+artifacts/visualizations/*
+artifacts/tokenizer/*
+artifacts/phrase_index/
+!artifacts/**/.gitkeep
+
+# Keep committed reports optional; ignore bulky binaries
+*.npy
+*.pt

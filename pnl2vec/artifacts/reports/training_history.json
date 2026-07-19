@@ -1,0 +1,47 @@
+[
+  {
+    "epoch": 1,
+    "train_loss": 2.761412675021797,
+    "val_loss": 2.605564546585083,
+    "positive_pair_score": -1.3273823023877098,
+    "negative_pair_score": -1.5699905290535772,
+    "learning_rate": 0.003,
+    "epoch_duration": 1.0325708389282227
+  },
+  {
+    "epoch": 2,
+    "train_loss": 2.610231634109251,
+    "val_loss": 2.604132390022278,
+    "positive_pair_score": -1.469512172924575,
+    "negative_pair_score": -1.840628255118606,
+    "learning_rate": 0.003,
+    "epoch_duration": 1.002474069595337
+  },
+  {
+    "epoch": 3,
+    "train_loss": 2.5918692391935045,
+    "val_loss": 2.5796512007713317,
+    "positive_pair_score": -1.4487188750872984,
+    "negative_pair_score": -1.8824429898735027,
+    "learning_rate": 0.003,
+    "epoch_duration": 1.003737211227417
+  },
+  {
+    "epoch": 4,
+    "train_loss": 2.5744932490443415,
+    "val_loss": 2.568895721435547,
+    "positive_pair_score": -1.4354448401576392,
+    "negative_pair_score": -1.9302869437527082,
+    "learning_rate": 0.003,
+    "epoch_duration": 0.9289917945861816
+  },
+  {
+    "epoch": 5,
+    "train_loss": 2.5638875615212227,
+    "val_loss": 2.5577244639396666,
+    "positive_pair_score": -1.4236431858872856,
+    "negative_pair_score": -1.9756851968585805,
+    "learning_rate": 0.003,
+    "epoch_duration": 1.0163288116455078
+  }
+]

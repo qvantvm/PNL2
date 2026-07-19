@@ -1,0 +1,5 @@
+seed: 42
+method: pca
+max_points: 1000
+artifacts_dir: artifacts
+output_dir: artifacts/visualizations

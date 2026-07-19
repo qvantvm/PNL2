@@ -1,0 +1,46 @@
+pnl/2
+score {
+    meta {
+        title="Tiny C Major Scale"
+        profile=[core,notation]
+    }
+    part piano instrument=piano staves=2 {
+        meter at=1:0 beats=4 beat-unit=1/4
+        key at=1:0 tonic=C mode=major
+        tempo t1 at=1:0 beat=1/4 bpm=100
+        measure 1 {
+            staff RH {
+                voice RH1 {
+                    note n1 pitch=C4 dur=1/4 finger=1
+                    note n2 pitch=D4 dur=1/4 finger=2
+                    note n3 pitch=E4 dur=1/4 finger=3
+                    note n4 pitch=F4 dur=1/4 finger=1
+                }
+            }
+            staff LH {
+                voice LH1 {
+                    rest r1 dur=1
+                }
+            }
+        }
+        measure 2 {
+            staff RH {
+                voice RH1 {
+                    note n5 pitch=G4 dur=1/4 finger=2
+                    note n6 pitch=A4 dur=1/4 finger=3
+                    note n7 pitch=B4 dur=1/4 finger=4
+                    note n8 pitch=C5 dur=1/4 finger=5
+                }
+            }
+            staff LH {
+                voice LH1 {
+                    chord c1 dur=1 {
+                        tone n9 pitch=C3 finger=5
+                        tone n10 pitch=E3 finger=3
+                        tone n11 pitch=G3 finger=1
+                    }
+                }
+            }
+        }
+    }
+}

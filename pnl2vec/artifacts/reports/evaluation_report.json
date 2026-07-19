@@ -1,0 +1,395 @@
+{
+  "intrinsic": [
+    {
+      "name": "nn:DURATION:1/4",
+      "query": "DURATION:1/4",
+      "expected": [
+        "DURATION:1",
+        "DURATION:1/16",
+        "DURATION:1/2",
+        "DURATION:1/8"
+      ],
+      "neighbors": [
+        "OCTAVE:5",
+        "ACCIDENTAL:NATURAL",
+        "EVENT:NOTE",
+        "PITCH_CLASS:D",
+        "PITCH_CLASS:G",
+        "PITCH_CLASS:E",
+        "FINGER:4",
+        "PITCH_CLASS:C",
+        "DOT_COUNT:1",
+        "FINGER:2"
+      ],
+      "precision_at_k": 0.0,
+      "mrr": 0.0
+    },
+    {
+      "name": "nn:PITCH_CLASS:C",
+      "query": "PITCH_CLASS:C",
+      "expected": [
+        "PITCH_CLASS:G",
+        "PITCH_CLASS:A",
+        "PITCH_CLASS:E",
+        "PITCH_CLASS:B",
+        "PITCH_CLASS:F",
+        "PITCH_CLASS:D"
+      ],
+      "neighbors": [
+        "PITCH_CLASS:E",
+        "PITCH_CLASS:D",
+        "FINGER:4",
+        "FINGER:5",
+        "ACCIDENTAL:NATURAL",
+        "OCTAVE:3",
+        "PITCH_CLASS:F",
+        "DYNAMIC:F",
+        "ARTICULATION:LEGATO",
+        "FINGER:3"
+      ],
+      "precision_at_k": 0.3,
+      "mrr": 1.0
+    },
+    {
+      "name": "nn:PEDAL:DOWN",
+      "query": "PEDAL:DOWN",
+      "expected": [
+        "PEDAL:UP"
+      ],
+      "neighbors": [
+        "PEDAL:UP",
+        "TEMPO_BPM:112",
+        "TEMPO_BPM:116",
+        "TEMPO_BPM:82",
+        "TEMPO_BPM:74",
+        "KEY:D_MINOR",
+        "TEMPO_BPM:117",
+        "TEMPO_BPM:118",
+        "KEY:A_MINOR",
+        "TEMPO_BPM:109"
+      ],
+      "precision_at_k": 0.1,
+      "mrr": 1.0
+    },
+    {
+      "name": "nn:DYNAMIC:MF",
+      "query": "DYNAMIC:MF",
+      "expected": [
+        "DYNAMIC:F",
+        "DYNAMIC:MP",
+        "DYNAMIC:PP",
+        "DYNAMIC:FF"
+      ],
+      "neighbors": [
+        "DYNAMIC:PP",
+        "ARTICULATION:TENUTO",
+        "DYNAMIC:FF",
+        "PITCH_CLASS:A",
+        "ARTICULATION:ACCENT",
+        "DYNAMIC:F",
+        "DURATION:1/16",
+        "TEMPO_BPM:125",
+        "TEMPO_BPM:117",
+        "KEY:D_MINOR"
+      ],
+      "precision_at_k": 0.3,
+      "mrr": 1.0
+    },
+    {
+      "name": "nn:ARTICULATION:STACCATO",
+      "query": "ARTICULATION:STACCATO",
+      "expected": [
+        "ARTICULATION:ACCENT",
+        "ARTICULATION:LEGATO",
+        "ARTICULATION:TENUTO"
+      ],
+      "neighbors": [
+        "DURATION:1/2",
+        "OCTAVE:4",
+        "REST",
+        "TIE:END",
+        "TIE:START",
+        "PITCH_CLASS:A",
+        "STRUCT:MEASURE_END",
+        "PEDAL:UP",
+        "PEDAL:DOWN",
+        "DURATION:1/16"
+      ],
+      "precision_at_k": 0.0,
+      "mrr": 0.0
+    }
+  ],
+  "analogies": [
+    {
+      "query": "DURATION:1/4 - DURATION:1/8 + DURATION:1/2",
+      "neighbors": [
+        [
+          "SLUR:END",
+          0.7491589784622192
+        ],
+        [
+          "TIE:END",
+          0.5911105275154114
+        ],
+        [
+          "SLUR:START",
+          0.5504427552223206
+        ],
+        [
+          "FINGER:2",
+          0.4965755343437195
+        ],
+        [
+          "TIE:START",
+          0.4795560836791992
+        ],
+        [
+          "PITCH_CLASS:B",
+          0.4567764103412628
+        ],
+        [
+          "ARTICULATION:STACCATO",
+          0.45306557416915894
+        ],
+        [
+          "STRUCT:MEASURE_END",
+          0.43943479657173157
+        ],
+        [
+          "PITCH_CLASS:G",
+          0.42746543884277344
+        ],
+        [
+          "DOT_COUNT:1",
+          0.3992326855659485
+        ]
+      ]
+    },
+    {
+      "query": "PITCH_CLASS:C - OCTAVE:4 + OCTAVE:5",
+      "neighbors": [
+        [
+          "DURATION:1/4",
+          0.8837059736251831
+        ],
+        [
+          "PITCH_CLASS:E",
+          0.8288580179214478
+        ],
+        [
+          "PITCH_CLASS:D",
+          0.7698053121566772
+        ],
+        [
+          "ACCIDENTAL:NATURAL",
+          0.7537901401519775
+        ],
+        [
+          "FINGER:4",
+          0.7441669702529907
+        ],
+        [
+          "EVENT:NOTE",
+          0.668738842010498
+        ],
+        [
+          "OCTAVE:3",
+          0.6025458574295044
+        ],
+        [
+          "FINGER:3",
+          0.5252853631973267
+        ],
+        [
+          "PITCH_CLASS:G",
+          0.5008965730667114
+        ],
+        [
+          "FINGER:5",
+          0.4574998915195465
+        ]
+      ]
+    }
+  ],
+  "probes": [
+    {
+      "name": "token_category",
+      "accuracy": 0.36,
+      "macro_f1": 0.09045584045584047,
+      "n_classes": 14,
+      "note": "Label is category metadata; partly encoded in token namespace (semi-trivial)."
+    },
+    {
+      "name": "pitch_class",
+      "accuracy": 0.0,
+      "macro_f1": 0.0,
+      "n_classes": 7,
+      "note": "insufficient data"
+    },
+    {
+      "name": "octave",
+      "accuracy": 0.0,
+      "macro_f1": 0.0,
+      "n_classes": 4,
+      "note": "insufficient data"
+    },
+    {
+      "name": "duration",
+      "accuracy": 0.0,
+      "macro_f1": 0.0,
+      "n_classes": 5,
+      "note": "insufficient data"
+    },
+    {
+      "name": "hand",
+      "accuracy": 0.0,
+      "macro_f1": 0.0,
+      "n_classes": 2,
+      "note": "insufficient data"
+    },
+    {
+      "name": "articulation",
+      "accuracy": 0.0,
+      "macro_f1": 0.0,
+      "n_classes": 4,
+      "note": "insufficient data"
+    },
+    {
+      "name": "dynamic",
+      "accuracy": 0.0,
+      "macro_f1": 0.0,
+      "n_classes": 5,
+      "note": "insufficient data"
+    }
+  ],
+  "baselines": {
+    "learned": {
+      "mean_precision_at_k": 0.13999999999999999,
+      "mean_mrr": 0.6,
+      "details": [
+        {
+          "query": "DURATION:1/4",
+          "precision_at_k": 0.0,
+          "mrr": 0.0
+        },
+        {
+          "query": "PITCH_CLASS:C",
+          "precision_at_k": 0.3,
+          "mrr": 1.0
+        },
+        {
+          "query": "PEDAL:DOWN",
+          "precision_at_k": 0.1,
+          "mrr": 1.0
+        },
+        {
+          "query": "DYNAMIC:MF",
+          "precision_at_k": 0.3,
+          "mrr": 1.0
+        },
+        {
+          "query": "ARTICULATION:STACCATO",
+          "precision_at_k": 0.0,
+          "mrr": 0.0
+        }
+      ]
+    },
+    "random": {
+      "mean_precision_at_k": 0.02,
+      "mean_mrr": 0.02222222222222222,
+      "details": [
+        {
+          "query": "DURATION:1/4",
+          "precision_at_k": 0.0,
+          "mrr": 0.0
+        },
+        {
+          "query": "PITCH_CLASS:C",
+          "precision_at_k": 0.0,
+          "mrr": 0.0
+        },
+        {
+          "query": "PEDAL:DOWN",
+          "precision_at_k": 0.0,
+          "mrr": 0.0
+        },
+        {
+          "query": "DYNAMIC:MF",
+          "precision_at_k": 0.1,
+          "mrr": 0.1111111111111111
+        },
+        {
+          "query": "ARTICULATION:STACCATO",
+          "precision_at_k": 0.0,
+          "mrr": 0.0
+        }
+      ]
+    },
+    "feature": {
+      "mean_precision_at_k": 0.36,
+      "mean_mrr": 0.8666666666666666,
+      "details": [
+        {
+          "query": "DURATION:1/4",
+          "precision_at_k": 0.4,
+          "mrr": 1.0
+        },
+        {
+          "query": "PITCH_CLASS:C",
+          "precision_at_k": 0.6,
+          "mrr": 0.3333333333333333
+        },
+        {
+          "query": "PEDAL:DOWN",
+          "precision_at_k": 0.1,
+          "mrr": 1.0
+        },
+        {
+          "query": "DYNAMIC:MF",
+          "precision_at_k": 0.4,
+          "mrr": 1.0
+        },
+        {
+          "query": "ARTICULATION:STACCATO",
+          "precision_at_k": 0.3,
+          "mrr": 1.0
+        }
+      ]
+    },
+    "untrained": {
+      "mean_precision_at_k": 0.02,
+      "mean_mrr": 0.02222222222222222,
+      "details": [
+        {
+          "query": "DURATION:1/4",
+          "precision_at_k": 0.0,
+          "mrr": 0.0
+        },
+        {
+          "query": "PITCH_CLASS:C",
+          "precision_at_k": 0.0,
+          "mrr": 0.0
+        },
+        {
+          "query": "PEDAL:DOWN",
+          "precision_at_k": 0.0,
+          "mrr": 0.0
+        },
+        {
+          "query": "DYNAMIC:MF",
+          "precision_at_k": 0.1,
+          "mrr": 0.1111111111111111
+        },
+        {
+          "query": "ARTICULATION:STACCATO",
+          "precision_at_k": 0.0,
+          "mrr": 0.0
+        }
+      ]
+    }
+  },
+  "notes": [
+    "Intrinsic expected sets are soft musical heuristics; not all relationships must emerge from every corpus.",
+    "Namespace probes can be partly trivial because labels are encoded in token identity."
+  ]
+}

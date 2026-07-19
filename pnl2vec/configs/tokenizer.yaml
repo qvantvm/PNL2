@@ -1,0 +1,6 @@
+tokenizer:
+  mode: atomic
+  compound_min_frequency: 20
+  normalize_enharmonics: false
+  preserve_pitch_spelling: true
+  preserve_source_spans: true

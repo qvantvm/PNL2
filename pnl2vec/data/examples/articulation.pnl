@@ -1,0 +1,27 @@
+pnl/2
+score {
+    meta {
+        title="Articulation Example"
+    }
+    part piano instrument=piano staves=2 {
+        meter at=1:0 beats=4 beat-unit=1/4
+        key at=1:0 tonic=C mode=major
+        tempo t1 at=1:0 beat=1/4 bpm=96
+        measure 1 {
+            staff RH {
+                voice RH1 {
+                    note n1 pitch=C5 dur=1/4 augment=1 finger=1 art=[accent] dynamic=mf
+                    note n2 pitch=D5 dur=1/8 finger=2 art=[staccato]
+                    note n3 pitch=E5 dur=1/4 finger=3
+                    note n4 pitch=G5 dur=1/4 finger=5 art=[tenuto]
+                }
+            }
+            staff LH {
+                voice LH1 {
+                    rest r1 dur=1
+                }
+            }
+        }
+        slur s1 from=n1 to=n4 placement=above
+    }
+}
