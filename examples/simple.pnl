@@ -1,0 +1,32 @@
+pnl/2
+score {
+    meta {
+        title="Simple Scale"
+        composer=Anonymous
+        profile=[core,notation]
+    }
+    part Piano instrument=Piano staves=2 {
+        measure 1 {
+            staff RH {
+                voice RH1 {
+                    note n1 pitch=C5 dur=1/4 finger=1 art=[accent]
+                    note n2 pitch=D5 dur=1/4 finger=2 art=[staccato]
+                    note n3 pitch=E5 dur=1/4 finger=3
+                    note n4 pitch=F5 dur=1/4 finger=4
+                }
+            }
+            staff LH {
+                voice LH2 {
+                    note n5 pitch=C3 dur=1/2
+                    note n6 pitch=G2 dur=1/2
+                }
+            }
+            meter at=1:0 beats=4 beat-unit=1/4
+            key at=1:0 tonic=C mode=major
+            clef staff=RH at=1:0 type=treble
+            clef staff=LH at=1:0 type=bass
+            tempo t1 at=1:0 beat=1/4 bpm=120
+        }
+        slur s1 from=n1 to=n4
+    }
+}
