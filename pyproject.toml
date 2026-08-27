@@ -21,6 +21,7 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
+engrave = ["verovio>=4.0", "cairosvg>=2.7"]
 dev = ["pytest>=7.0"]
 
 [project.scripts]

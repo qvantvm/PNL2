@@ -126,15 +126,20 @@ def _convert_part(part: Node, pid: str) -> Element:
             ET.SubElement(attr, "divisions").text = str(divisions)
             if len(staff_names) > 1:
                 ET.SubElement(attr, "staves").text = str(len(staff_names))
+                ET.SubElement(attr, "part-symbol").text = "brace"
             for key in keys:
                 if _pos_measure(key.props.get("at")) == measure.number:
                     _emit_key(attr, key)
             for meter in meters:
                 if _pos_measure(meter.props.get("at")) == measure.number:
                     _emit_time(attr, meter)
+            emitted_clef = False
             for clef in clefs:
                 if _pos_measure(clef.props.get("at")) == measure.number:
                     _emit_clef(attr, clef, staff_index)
+                    emitted_clef = True
+            if not emitted_clef and measure.number == 1:
+                _emit_default_clefs(attr, staff_names, staff_index)
 
         # tempos / dynamics at measure start
         for tempo in tempos:
@@ -554,6 +559,24 @@ def _emit_time(attr: Element, meter: Node) -> None:
     tel = ET.SubElement(attr, "time")
     ET.SubElement(tel, "beats").text = str(beats)
     ET.SubElement(tel, "beat-type").text = str(beat_type)
+
+
+def _emit_default_clefs(
+    attr: Element, staff_names: list[str], staff_index: dict[str, int]
+) -> None:
+    """Treble/bass defaults so two-staff piano scores engrave as a grand staff."""
+    if len(staff_names) >= 2:
+        types = ["treble", "bass"] + ["treble"] * (len(staff_names) - 2)
+        pairs = list(zip(types, staff_names))
+    elif staff_names:
+        pairs = [("treble", staff_names[0])]
+    else:
+        pairs = [("treble", None)]
+    for ctype, staff in pairs:
+        props: dict[str, Any] = {"type": ctype}
+        if staff:
+            props["staff"] = staff
+        _emit_clef(attr, Node(kind="clef", props=props), staff_index)
 
 
 def _emit_clef(attr: Element, clef: Node, staff_index: dict[str, int]) -> None:

@@ -30,6 +30,9 @@ def test_pnl_to_musicxml_and_back():
     xml = pnl_to_musicxml(text)
     assert "score-partwise" in xml
     assert "<step>C</step>" in xml
+    assert "<part-symbol>brace</part-symbol>" in xml
+    assert "<sign>G</sign>" in xml
+    assert "<sign>F</sign>" in xml
     pnl2 = musicxml_to_pnl(xml)
     doc = parse(pnl2)
     pitches = [

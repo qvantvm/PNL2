@@ -7,6 +7,7 @@ Compact, deterministic symbolic piano notation for ML training, MusicXML interch
 - Formal EBNF grammar and language documentation
 - Parser, canonical serializer, and validator
 - MusicXML → PNL/2 and PNL/2 → MusicXML converters
+- Verovio-based score engraver (SVG, PNG, HTML)
 - Exact rational durations; explicit dots vs articulations; ID-based ties/slurs
 
 ## Install
@@ -14,6 +15,14 @@ Compact, deterministic symbolic piano notation for ML training, MusicXML interch
 ```bash
 pip install -e ".[dev]"
 ```
+
+To engrave scores (Verovio + CairoSVG):
+
+```bash
+pip install -e ".[dev,engrave]"
+```
+
+PNG rasterization also needs the system Cairo library (`brew install cairo` on macOS). SVG and HTML do not.
 
 ## CLI
 
@@ -23,6 +32,11 @@ pnl2 from-musicxml score.musicxml -o score.pnl
 
 # PNL/2 → MusicXML
 pnl2 to-musicxml score.pnl -o score.musicxml
+
+# Engrave to SVG / PNG / HTML
+pnl2 engrave score.pnl -o score.svg
+pnl2 engrave score.pnl -o score.png --scale 2
+pnl2 engrave score.pnl -o score.html
 
 # Validate / canonicalize
 pnl2 validate score.pnl
@@ -34,6 +48,7 @@ pnl2 parse score.pnl --canonical -o score.canonical.pnl
 ```python
 from pnl2 import parse, serialize, validate
 from pnl2.musicxml import musicxml_to_pnl, pnl_to_musicxml
+from pnl2.engraver import engrave, engrave_svg
 
 doc = parse(open("score.pnl").read())
 print(validate(doc))
@@ -41,6 +56,9 @@ print(serialize(doc))
 
 pnl = musicxml_to_pnl(open("score.musicxml").read())
 xml = pnl_to_musicxml(pnl)
+
+engrave("score.pnl", "score.svg")
+pages = engrave_svg(doc)
 ```
 
 ## Layout
@@ -50,7 +68,7 @@ xml = pnl_to_musicxml(pnl)
 | `grammar/pnl2.ebnf` | Formal grammar |
 | `docs/LANGUAGE.md` | Language reference |
 | `docs/MUSICXML.md` | Conversion mapping |
-| `src/pnl2/` | Parser, serializer, validator, converters |
+| `src/pnl2/` | Parser, serializer, validator, converters, engraver |
 | `examples/` | Sample `.pnl` and MusicXML files |
 | `tests/` | Unit and round-trip tests |
 

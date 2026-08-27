@@ -44,6 +44,24 @@ def main(argv: list[str] | None = None) -> int:
     p_to.add_argument("input", type=Path)
     p_to.add_argument("-o", "--output", type=Path)
 
+    p_eng = sub.add_parser("engrave", help="Engrave a PNL/2 score to SVG, PNG, or HTML")
+    p_eng.add_argument("input", type=Path)
+    p_eng.add_argument("-o", "--output", type=Path)
+    p_eng.add_argument(
+        "--format",
+        dest="fmt",
+        choices=["svg", "png", "html"],
+        help="Output format (default: infer from -o, else svg)",
+    )
+    p_eng.add_argument(
+        "--scale",
+        type=float,
+        default=None,
+        help="PNG raster scale (default: 2)",
+    )
+    p_eng.add_argument("--page-width", type=int, dest="page_width", help="Verovio pageWidth")
+    p_eng.add_argument("--page-height", type=int, dest="page_height", help="Verovio pageHeight")
+
     args = parser.parse_args(argv)
 
     try:
@@ -85,6 +103,31 @@ def main(argv: list[str] | None = None) -> int:
                 args.output.write_text(xml, encoding="utf-8")
             else:
                 sys.stdout.write(xml)
+            return 0
+
+        if args.command == "engrave":
+            from .engraver import EngraverError, engrave
+
+            options: dict[str, int] = {}
+            if args.page_width is not None:
+                options["pageWidth"] = args.page_width
+            if args.page_height is not None:
+                options["pageHeight"] = args.page_height
+            try:
+                result = engrave(
+                    args.input,
+                    args.output,
+                    format=args.fmt,
+                    scale=args.scale,
+                    options=options or None,
+                )
+            except EngraverError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+            if args.output is None and isinstance(result, str):
+                sys.stdout.write(result)
+                if not result.endswith("\n"):
+                    sys.stdout.write("\n")
             return 0
     except ParseError as exc:
         print(f"parse error: {exc}", file=sys.stderr)
