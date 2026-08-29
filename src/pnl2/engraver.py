@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import re
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +45,29 @@ _FALLBACK_GLYPHS = {
 
 class EngraverError(Exception):
     """Raised when engraving cannot proceed (missing deps, bad input, Verovio failure)."""
+
+
+_toolkit_lock = threading.Lock()
+_toolkit: Any = None
+_toolkit_factory: Any = None
+
+
+def reset_verovio_toolkit() -> None:
+    """Drop the cached Verovio toolkit (tests and resource reloads)."""
+    global _toolkit, _toolkit_factory
+    with _toolkit_lock:
+        _toolkit = None
+        _toolkit_factory = None
+
+
+def warmup_verovio() -> None:
+    """Create the toolkit on the current thread so later workers can reuse it."""
+    try:
+        verovio = _import_verovio()
+    except EngraverError:
+        return
+    with _toolkit_lock:
+        _get_toolkit(verovio)
 
 
 def engrave_svg(
@@ -133,17 +157,48 @@ def load_document(source: str | Path | Document) -> Document:
 def render_svg_pages(musicxml: str, *, options: dict[str, Any] | None = None) -> list[str]:
     """Load MusicXML into Verovio and render every page to SVG."""
     verovio = _import_verovio()
-    toolkit = verovio.toolkit()
     merged = {**_DEFAULT_OPTIONS, **(options or {})}
     merged["inputFrom"] = "xml"
-    toolkit.setOptions(merged)
-    loaded = toolkit.loadData(musicxml)
-    if loaded is False:
-        raise EngraverError("Verovio could not load the generated MusicXML")
-    count = int(toolkit.getPageCount())
-    if count < 1:
-        raise EngraverError("Verovio produced no pages")
-    return [outline_smufl_text(toolkit.renderToSVG(page)) for page in range(1, count + 1)]
+    with _toolkit_lock:
+        toolkit = _get_toolkit(verovio)
+        toolkit.setOptions(merged)
+        loaded = toolkit.loadData(musicxml)
+        if loaded is False:
+            raise EngraverError(_load_failure_message(toolkit))
+        count = int(toolkit.getPageCount())
+        if count < 1:
+            raise EngraverError("Verovio produced no pages")
+        return [outline_smufl_text(toolkit.renderToSVG(page)) for page in range(1, count + 1)]
+
+
+def _verovio_data_dir(verovio: Any) -> Path | None:
+    path = Path(getattr(verovio, "__file__", "") or ".").resolve().parent / "data"
+    return path if path.is_dir() else None
+
+
+def _get_toolkit(verovio: Any) -> Any:
+    global _toolkit, _toolkit_factory
+    factory = verovio.toolkit
+    if _toolkit is None or _toolkit_factory is not factory:
+        data = _verovio_data_dir(verovio)
+        if data is not None and hasattr(verovio, "setDefaultResourcePath"):
+            verovio.setDefaultResourcePath(str(data))
+        toolkit = factory()
+        if data is not None and hasattr(toolkit, "setResourcePath"):
+            toolkit.setResourcePath(str(data))
+        _toolkit = toolkit
+        _toolkit_factory = factory
+    return _toolkit
+
+
+def _load_failure_message(toolkit: Any) -> str:
+    detail = ""
+    if hasattr(toolkit, "getLog"):
+        log = str(toolkit.getLog() or "").strip()
+        if log:
+            last = log.splitlines()[-1].strip()
+            detail = f" ({last})"
+    return f"Verovio could not load the generated MusicXML{detail}"
 
 
 def outline_smufl_text(svg: str) -> str:
@@ -218,6 +273,47 @@ def combine_svgs(pages: list[str], *, gap: float = 80.0) -> str:
         y += h + gap
     chunks.append("</svg>")
     return "\n".join(chunks)
+
+
+def flatten_nested_svgs(svg: str) -> str:
+    """Unwrap nested ``<svg>`` so Qt (SVG Tiny 1.2) can paint Verovio output.
+
+    Verovio puts the score in an inner ``<svg class="definition-scale">``.
+    QSvgWidget skips that element, which leaves the studio preview blank.
+    """
+    body = _XML_DECL.sub("", svg).strip()
+    match = _SVG_OPEN.match(body)
+    if not match:
+        return svg
+    attrs, inner = match.group(1), match.group(2)
+    if not re.search(r"<svg\b", inner, re.IGNORECASE):
+        return _with_white_page(f"<svg{attrs}>{inner}</svg>", attrs)
+
+    viewbox = None
+    found = _VIEWBOX.search(attrs)
+    if found:
+        viewbox = found.group(1)
+
+    def _open(nest: re.Match[str]) -> str:
+        nonlocal viewbox
+        nest_attrs = nest.group(1)
+        if viewbox is None:
+            inner_box = _VIEWBOX.search(nest_attrs)
+            if inner_box:
+                viewbox = inner_box.group(1)
+        return f"<g{nest_attrs}>"
+
+    inner = re.sub(r"<svg\b([^>]*)>", _open, inner, flags=re.IGNORECASE)
+    inner = re.sub(r"</svg>", "</g>", inner, flags=re.IGNORECASE)
+    if viewbox and not _VIEWBOX.search(attrs):
+        attrs = f'{attrs} viewBox="{viewbox}"'
+    return _with_white_page(f"<svg{attrs}>{inner}</svg>", attrs)
+
+
+def _with_white_page(svg: str, attrs: str) -> str:
+    width, height = _svg_dims(attrs)
+    bg = f'<rect class="page-bg" x="0" y="0" width="{width:g}" height="{height:g}" fill="white"/>'
+    return re.sub(r"(<svg\b[^>]*>)", rf"\1{bg}", svg, count=1, flags=re.IGNORECASE)
 
 
 def wrap_html(pages: list[str], *, title: str = "Score") -> str:

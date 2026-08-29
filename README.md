@@ -8,6 +8,7 @@ Compact, deterministic symbolic piano notation for ML training, MusicXML interch
 - Parser, canonical serializer, and validator
 - MusicXML → PNL/2 and PNL/2 → MusicXML converters
 - Verovio-based score engraver (SVG, PNG, HTML)
+- PyQt6 Sample Studio for authoring `.pnl` + reference-image pairs
 - Exact rational durations; explicit dots vs articulations; ID-based ties/slurs
 
 ## Install
@@ -23,6 +24,12 @@ pip install -e ".[dev,engrave]"
 ```
 
 PNG rasterization also needs the system Cairo library (`brew install cairo` on macOS). SVG and HTML do not.
+
+For the sample studio (PyQt6):
+
+```bash
+pip install -e ".[dev,engrave,studio]"
+```
 
 ## CLI
 
@@ -41,6 +48,10 @@ pnl2 engrave score.pnl -o score.html
 # Validate / canonicalize
 pnl2 validate score.pnl
 pnl2 parse score.pnl --canonical -o score.canonical.pnl
+
+# Sample studio (edit / live-engrave / compare to a reference image)
+pnl2 studio
+pnl2 studio examples/simple.pnl
 ```
 
 ## Library
@@ -61,6 +72,18 @@ engrave("score.pnl", "score.svg")
 pages = engrave_svg(doc)
 ```
 
+## Sample Studio
+
+Four-pane editor for dataset samples: PNL script (top-left), live Verovio preview (top-right), parse/engrave log (bottom-left), and a reference image of the intended result (bottom-right).
+
+```bash
+pnl2 studio
+# or
+python -m pnl2.studio examples/simple.pnl
+```
+
+Save writes `name.pnl`, optional `name.png` (the attached reference), and `name.sample.json` so the pair can be reopened later. New work defaults to the `samples/` folder.
+
 ## Layout
 
 | Path | Contents |
@@ -68,8 +91,9 @@ pages = engrave_svg(doc)
 | `grammar/pnl2.ebnf` | Formal grammar |
 | `docs/LANGUAGE.md` | Language reference |
 | `docs/MUSICXML.md` | Conversion mapping |
-| `src/pnl2/` | Parser, serializer, validator, converters, engraver |
+| `src/pnl2/` | Parser, serializer, validator, converters, engraver, studio |
 | `examples/` | Sample `.pnl` and MusicXML files |
+| `samples/` | Working folder for studio dataset pairs |
 | `tests/` | Unit and round-trip tests |
 
 ## Design principles

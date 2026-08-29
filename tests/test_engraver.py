@@ -1,3 +1,4 @@
+import re
 import sys
 import types
 from pathlib import Path
@@ -11,8 +12,10 @@ from pnl2.engraver import (
     combine_svgs,
     engrave,
     engrave_svg,
+    flatten_nested_svgs,
     infer_format,
     outline_smufl_text,
+    reset_verovio_toolkit,
     wrap_html,
 )
 
@@ -64,6 +67,7 @@ class FakeToolkit:
 
 
 def _install_fake_verovio(monkeypatch, toolkit_factory=None):
+    reset_verovio_toolkit()
     factory = toolkit_factory or FakeToolkit
     fake = types.ModuleType("verovio")
     fake.toolkit = factory
@@ -93,6 +97,29 @@ def test_combine_svgs_stacks_pages():
     combined = combine_svgs([PAGE_SVG, PAGE_SVG], gap=10)
     assert combined.count('class="staff"') == 2
     assert 'viewBox="0 0 100 110"' in combined
+
+
+def test_flatten_nested_svgs_unwraps_verovio_inner():
+    nested = (
+        '<svg width="210px" height="61px" xmlns="http://www.w3.org/2000/svg">'
+        "<defs><g id='E050'/></defs>"
+        '<svg class="definition-scale" viewBox="0 0 2100 610">'
+        '<g class="staff"><path d="M0 0"/></g>'
+        "</svg>"
+        "</svg>"
+    )
+    flat = flatten_nested_svgs(nested)
+    assert re.search(r"<svg[^>]*>.*<svg", flat, re.I | re.S) is None
+    assert 'class="definition-scale"' in flat
+    assert 'viewBox="0 0 2100 610"' in flat
+    assert 'fill="white"' in flat
+    assert 'class="staff"' in flat
+
+
+def test_flatten_nested_svgs_adds_white_page_to_flat_svg():
+    flat = flatten_nested_svgs(PAGE_SVG)
+    assert 'fill="white"' in flat
+    assert 'class="staff"' in flat
 
 
 TEMPO_SVG = (
@@ -268,3 +295,27 @@ def test_engrave_examples_svg(name):
     if name != "polyphonic.pnl":
         assert "\ueca5" not in joined
         assert 'id="smufl-ECA5"' in joined
+
+
+def test_render_reused_across_threads():
+    pytest.importorskip("verovio")
+    import threading
+
+    from pnl2.engraver import render_svg_pages
+    from pnl2.musicxml.to_musicxml import pnl_to_musicxml
+
+    xml = pnl_to_musicxml(TINY_PNL)
+    errors: list[str] = []
+
+    def run() -> None:
+        try:
+            pages = render_svg_pages(xml)
+            assert pages and "<svg" in pages[0]
+        except Exception as exc:  # noqa: BLE001
+            errors.append(str(exc))
+
+    threads = [threading.Thread(target=run) for _ in range(3)]
+    for thread in threads:
+        thread.start()
+        thread.join()
+    assert errors == []

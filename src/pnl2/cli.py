@@ -62,6 +62,9 @@ def main(argv: list[str] | None = None) -> int:
     p_eng.add_argument("--page-width", type=int, dest="page_width", help="Verovio pageWidth")
     p_eng.add_argument("--page-height", type=int, dest="page_height", help="Verovio pageHeight")
 
+    p_studio = sub.add_parser("studio", help="Open the sample authoring studio")
+    p_studio.add_argument("path", type=Path, nargs="?", help="Optional .pnl or .sample.json")
+
     args = parser.parse_args(argv)
 
     try:
@@ -129,6 +132,11 @@ def main(argv: list[str] | None = None) -> int:
                 if not result.endswith("\n"):
                     sys.stdout.write("\n")
             return 0
+
+        if args.command == "studio":
+            from .studio.app import main as studio_main
+
+            return studio_main(args.path)
     except ParseError as exc:
         print(f"parse error: {exc}", file=sys.stderr)
         return 2
