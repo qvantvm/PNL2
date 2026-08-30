@@ -44,6 +44,52 @@ def test_pnl_to_musicxml_and_back():
     assert "D5" in pitches
 
 
+PIANO_SYMBOLS_PNL = """pnl/2
+score {
+    meta { title="Symbols" }
+    part piano instrument=piano staves=2 {
+        meter at=1:0 beats=4 beat-unit=1/4
+        key at=1:0 tonic=C mode=major
+        measure 1 {
+            staff RH {
+                voice RH1 {
+                    grace-group gg1 type=acciaccatura anchor=n1 {
+                        grace g1 pitch=D5
+                    }
+                    note n1 pitch=C5 dur=1/4 finger=1
+                    note n2 pitch=E5 dur=1/4 finger=2
+                    note n3 pitch=G5 dur=1/2 finger=3 ornament=trill
+                }
+            }
+            staff LH {
+                voice LH1 {
+                    note n4 pitch=C3 dur=1/2 finger=5
+                    note n5 pitch=G2 dur=1/2 finger=1
+                }
+            }
+        }
+        ottava o1 type="8va" from=n1 to=n3
+        pedal p1 type=sustain from=1:0 to=1:1/2
+        pedal p2 type=sustain from=1:1/2 to=1:1
+    }
+}
+"""
+
+
+def test_musicxml_ottava_pedal_fingering_grace():
+    xml = pnl_to_musicxml(PIANO_SYMBOLS_PNL)
+    assert '<octave-shift type="down" number="1" size="8"' in xml or '<octave-shift type="down" size="8" number="1"' in xml
+    assert 'type="stop"' in xml
+    assert 'placement="below"' in xml
+    assert '<pedal type="start" line="yes"' in xml or '<pedal type="start"' in xml and 'line="yes"' in xml
+    assert "<staff>2</staff>" in xml
+    assert '<fingering placement="below">5</fingering>' in xml
+    assert '<fingering placement="above">1</fingering>' in xml
+    assert '<grace slash="yes"' in xml
+    assert "<type>eighth</type>" in xml
+    assert "<trill-mark" in xml
+
+
 def test_document_api():
     xml = (EXAMPLES / "simple.musicxml").read_text(encoding="utf-8")
     doc = musicxml_to_document(xml)

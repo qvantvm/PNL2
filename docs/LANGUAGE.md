@@ -182,7 +182,16 @@ pedal-curve pc1 type=sustain source=performance {
 }
 ```
 
-Types: `sustain`, `sostenuto`, `soft`. Depth/value ∈ `[0,1]`.
+Types: `sustain`, `sostenuto`, `soft`. Depth/value ∈ `[0,1]`. Pedal marks engrave below the lowest staff.
+
+## Octave displacement
+
+```text
+ottava o1 type="8va" from=n1 to=n4
+ottava o2 type="8vb" from=1:0 to=1:1 staff=LH
+```
+
+Types: `8va`, `8vb`, `15ma`, `15mb`. Endpoints may be note IDs or `measure:offset` positions.
 
 ## Harmony and analysis
 

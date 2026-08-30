@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 from collections import defaultdict
+from dataclasses import dataclass
 from fractions import Fraction
 from math import lcm
 from typing import Any, Iterable
@@ -94,11 +95,14 @@ def _convert_part(part: Node, pid: str) -> Element:
     slurs = [n for n in _iter(part) if n.kind == "slur"]
     beams = [n for n in _iter(part) if n.kind == "beam"]
     pedals = [n for n in _iter(part) if n.kind == "pedal"]
+    ottavas = [n for n in _iter(part) if n.kind == "ottava"]
     tempos = [n for n in _iter(part) if n.kind == "tempo"]
     meters = [n for n in _iter(part) if n.kind == "meter"]
     keys = [n for n in _iter(part) if n.kind == "key"]
     clefs = [n for n in _iter(part) if n.kind == "clef"]
     dynamics = [n for n in _iter(part) if n.kind == "dynamic"]
+    event_onsets = _index_event_onsets(part, staff_index)
+    pedal_staff = len(staff_names) if staff_names else 1
 
     tie_start = {t.props.get("from") for t in ties}
     tie_stop = {t.props.get("to") for t in ties}
@@ -149,11 +153,15 @@ def _convert_part(part: Node, pid: str) -> Element:
             if _pos_measure(dyn.props.get("at")) == measure.number:
                 _emit_dynamic_direction(m_el, dyn, staff_index)
 
-        for pedal in pedals:
-            if _pos_measure(pedal.props.get("from")) == measure.number and _pos_offset(
-                pedal.props.get("from")
-            ) == Fraction(0):
-                _emit_pedal(m_el, "start")
+        marks = _span_marks_for_measure(
+            measure.number or 1,
+            pedals,
+            ottavas,
+            event_onsets,
+            staff_index,
+            pedal_staff,
+        )
+        _emit_marks_at(m_el, [m for m in marks if m.offset == 0], divisions)
 
         # Emit notes staff by staff, voice by voice with backups
         staff_nodes = [c for c in measure.children if c.kind == "staff"]
@@ -177,7 +185,7 @@ def _convert_part(part: Node, pid: str) -> Element:
                             if g.kind == "grace":
                                 m_el.append(
                                     _emit_note(
-                                        g,
+                                        _grace_event(g, ev),
                                         divisions,
                                         sidx,
                                         voice.id or "1",
@@ -190,6 +198,23 @@ def _convert_part(part: Node, pid: str) -> Element:
                                         beams={},
                                     )
                                 )
+                        continue
+                    if ev.kind == "grace":
+                        m_el.append(
+                            _emit_note(
+                                ev,
+                                divisions,
+                                sidx,
+                                voice.id or "1",
+                                is_grace=True,
+                                chord=False,
+                                tie_start=False,
+                                tie_stop=False,
+                                slur_start_num=None,
+                                slur_stop_num=None,
+                                beams={},
+                            )
+                        )
                         continue
                     if ev.kind == "space":
                         dur = _event_effective(ev)
@@ -261,10 +286,8 @@ def _convert_part(part: Node, pid: str) -> Element:
                 prev_end = cursor
                 first = False
 
-        for pedal in pedals:
-            if _pos_measure(pedal.props.get("to")) == measure.number:
-                # emit stop at end if to offset is measure end-ish
-                _emit_pedal(m_el, "stop")
+        later = [m for m in marks if m.offset > 0]
+        _emit_marks_after(m_el, later, prev_end, divisions)
 
     return part_el
 
@@ -321,6 +344,8 @@ def _emit_note(
     ET.SubElement(note, "voice").text = vnum
 
     type_name, dots_from_type = _dur_to_type(written, augment)
+    if is_grace and not type_name:
+        type_name = "eighth"
     if type_name:
         ET.SubElement(note, "type").text = type_name
     for _ in range(max(augment, dots_from_type)):
@@ -370,7 +395,9 @@ def _emit_note(
         finger = ev.props.get("finger")
         if finger:
             technical = ET.SubElement(notations, "technical")
-            ET.SubElement(technical, "fingering").text = str(finger)
+            fing = ET.SubElement(technical, "fingering")
+            fing.text = str(finger)
+            fing.set("placement", "below" if staff >= 2 else "above")
         orn = ev.props.get("ornament")
         if orn:
             ornaments = ET.SubElement(notations, "ornaments")
@@ -380,6 +407,8 @@ def _emit_note(
                 "inverted-mordent": "inverted-mordent",
                 "turn": "turn",
                 "inverted-turn": "inverted-turn",
+                "schleifer": "schleifer",
+                "shake": "shake",
             }.get(str(orn))
             if tag:
                 ET.SubElement(ornaments, tag)
@@ -618,10 +647,167 @@ def _emit_dynamic_direction(
         ET.SubElement(direction, "staff").text = str(staff_index[staff])
 
 
-def _emit_pedal(measure: Element, ptype: str) -> None:
-    direction = ET.SubElement(measure, "direction")
+OCTAVA_MAP = {
+    "8va": ("down", "8", "above"),
+    "8": ("down", "8", "above"),
+    "8vb": ("up", "8", "below"),
+    "8b": ("up", "8", "below"),
+    "15ma": ("down", "15", "above"),
+    "15mb": ("up", "15", "below"),
+}
+
+
+@dataclass(frozen=True)
+class _SpanMark:
+    offset: Fraction
+    kind: str
+    action: str
+    staff: int | None
+    number: int = 1
+    size: str = "8"
+    shift: str = "down"
+    placement: str = "above"
+
+
+def _grace_event(grace: Node, group: Node) -> Node:
+    props = dict(grace.props)
+    if not props.get("type") and group.props.get("type"):
+        props["type"] = group.props["type"]
+    return Node(kind="grace", id=grace.id, props=props, children=grace.children)
+
+
+def _index_event_onsets(
+    part: Node, staff_index: dict[str, int]
+) -> dict[str, tuple[int, Fraction, int]]:
+    """Map event id → (measure, offset, staff number)."""
+    onsets: dict[str, tuple[int, Fraction, int]] = {}
+    measures = [c for c in part.children if c.kind == "measure"]
+    if not measures:
+        for child in part.children:
+            if child.kind == "notation":
+                measures.extend(c for c in child.children if c.kind == "measure")
+    for measure in measures:
+        mnum = measure.number or 1
+        for staff in (c for c in measure.children if c.kind == "staff"):
+            sidx = staff_index.get(staff.id or "RH", 1)
+            for voice in (c for c in staff.children if c.kind == "voice"):
+                cursor = Fraction(0)
+                for ev in voice.children:
+                    if ev.id:
+                        onsets[ev.id] = (mnum, cursor, sidx)
+                    if ev.kind == "grace-group":
+                        for g in ev.children:
+                            if g.id:
+                                onsets[g.id] = (mnum, cursor, sidx)
+                        continue
+                    if ev.kind == "grace":
+                        continue
+                    if ev.kind == "chord":
+                        for tone in ev.children:
+                            if tone.id:
+                                onsets[tone.id] = (mnum, cursor, sidx)
+                    if ev.kind in ("note", "rest", "space", "chord"):
+                        cursor += _event_effective(ev)
+    return onsets
+
+
+def _resolve_point(
+    value: Any, onsets: dict[str, tuple[int, Fraction, int]]
+) -> tuple[int, Fraction, int | None] | None:
+    if isinstance(value, Position):
+        return (value.measure, value.offset.to_fraction(), None)
+    if isinstance(value, str) and value in onsets:
+        mnum, offset, staff = onsets[value]
+        return (mnum, offset, staff)
+    return None
+
+
+def _span_marks_for_measure(
+    measure_number: int,
+    pedals: list[Node],
+    ottavas: list[Node],
+    onsets: dict[str, tuple[int, Fraction, int]],
+    staff_index: dict[str, int],
+    pedal_staff: int,
+) -> list[_SpanMark]:
+    marks: list[_SpanMark] = []
+    for pedal in pedals:
+        start = _resolve_point(pedal.props.get("from"), onsets)
+        stop = _resolve_point(pedal.props.get("to"), onsets)
+        staff = _staff_number(pedal.props.get("staff"), staff_index, pedal_staff)
+        if start and start[0] == measure_number:
+            marks.append(_SpanMark(start[1], "pedal", "start", staff))
+        if stop and stop[0] == measure_number:
+            marks.append(_SpanMark(stop[1], "pedal", "stop", staff))
+    for i, ottava in enumerate(ottavas, start=1):
+        start = _resolve_point(ottava.props.get("from"), onsets)
+        stop = _resolve_point(ottava.props.get("to"), onsets)
+        shift, size, placement = OCTAVA_MAP.get(str(ottava.props.get("type", "8va")), OCTAVA_MAP["8va"])
+        staff = _staff_number(ottava.props.get("staff"), staff_index, None)
+        if staff is None and start and start[2]:
+            staff = start[2]
+        if start and start[0] == measure_number:
+            marks.append(
+                _SpanMark(start[1], "ottava", "start", staff, number=i, size=size, shift=shift, placement=placement)
+            )
+        if stop and stop[0] == measure_number:
+            marks.append(
+                _SpanMark(stop[1], "ottava", "stop", staff, number=i, size=size, shift="stop", placement=placement)
+            )
+    marks.sort(key=lambda m: (m.offset, 0 if m.action == "stop" else 1))
+    return marks
+
+
+def _staff_number(name: Any, staff_index: dict[str, int], default: int | None) -> int | None:
+    if isinstance(name, str) and name in staff_index:
+        return staff_index[name]
+    return default
+
+
+def _emit_marks_at(measure: Element, marks: list[_SpanMark], divisions: int) -> None:
+    for mark in marks:
+        _emit_span_mark(measure, mark)
+
+
+def _emit_marks_after(
+    measure: Element, marks: list[_SpanMark], cursor: Fraction, divisions: int
+) -> None:
+    pos = cursor
+    for mark in marks:
+        if mark.offset < pos:
+            backup = ET.SubElement(measure, "backup")
+            ET.SubElement(backup, "duration").text = str(_to_div(pos - mark.offset, divisions))
+        elif mark.offset > pos:
+            fwd = ET.SubElement(measure, "forward")
+            ET.SubElement(fwd, "duration").text = str(_to_div(mark.offset - pos, divisions))
+        _emit_span_mark(measure, mark)
+        pos = mark.offset
+    if pos < cursor:
+        fwd = ET.SubElement(measure, "forward")
+        ET.SubElement(fwd, "duration").text = str(_to_div(cursor - pos, divisions))
+
+
+def _emit_span_mark(measure: Element, mark: _SpanMark) -> None:
+    if mark.kind == "pedal":
+        _emit_pedal(measure, mark.action, mark.staff)
+        return
+    placement = mark.placement
+    direction = ET.SubElement(measure, "direction", placement=placement)
     dtype = ET.SubElement(direction, "direction-type")
-    ET.SubElement(dtype, "pedal", type=ptype)
+    attrs = {"type": mark.shift if mark.action == "start" else "stop", "number": str(mark.number)}
+    if mark.action == "start":
+        attrs["size"] = mark.size
+    ET.SubElement(dtype, "octave-shift", **attrs)
+    if mark.staff:
+        ET.SubElement(direction, "staff").text = str(mark.staff)
+
+
+def _emit_pedal(measure: Element, ptype: str, staff: int | None = None) -> None:
+    direction = ET.SubElement(measure, "direction", placement="below")
+    dtype = ET.SubElement(direction, "direction-type")
+    ET.SubElement(dtype, "pedal", type=ptype, line="yes")
+    if staff:
+        ET.SubElement(direction, "staff").text = str(staff)
 
 
 def _iter(node: Node) -> Iterable[Node]:
