@@ -5,12 +5,26 @@ from __future__ import annotations
 import json
 import os
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 SIDECAR_SUFFIX = ".sample.json"
 SAMPLE_VERSION = 1
 SAMPLES_DIR_ENV = "PNL2_SAMPLES_DIR"
+RESERVED_SIDECAR_KEYS = ("version", "pnl", "expected")
+META_FIELDS = (
+    "id",
+    "split",
+    "task",
+    "title",
+    "caption",
+    "image",
+    "source",
+    "source_id",
+    "example_id",
+    "constructs",
+)
+SIDECAR_FIELD_ORDER = (*RESERVED_SIDECAR_KEYS, *META_FIELDS)
 
 BLANK_PNL = """pnl/2
 score {
@@ -39,6 +53,39 @@ score {
 
 
 @dataclass
+class SampleMeta:
+    """Editable sidecar fields besides the PNL path and reference pointer."""
+
+    id: str = ""
+    split: str = ""
+    task: str = ""
+    title: str = ""
+    caption: str = ""
+    image: str = ""
+    source: str = ""
+    source_id: str = ""
+    example_id: str = ""
+    constructs: list[str] = field(default_factory=list)
+    extra: dict = field(default_factory=dict)
+    present: frozenset[str] = field(default_factory=frozenset)
+
+    def to_sidecar_fields(self) -> dict:
+        payload: dict = {}
+        for key in META_FIELDS:
+            value = getattr(self, key)
+            if key == "constructs":
+                items = [item for item in value if item]
+                if items or key in self.present:
+                    payload[key] = items
+            elif value or key in self.present:
+                payload[key] = value
+        for key, value in self.extra.items():
+            if key not in RESERVED_SIDECAR_KEYS and key not in META_FIELDS:
+                payload[key] = value
+        return payload
+
+
+@dataclass
 class Sample:
     """In-memory sample: PNL text plus optional paths for the pair."""
 
@@ -47,6 +94,7 @@ class Sample:
     expected_path: Path | None = None
     sidecar_path: Path | None = None
     expected_ref: str | None = None
+    meta: SampleMeta = field(default_factory=SampleMeta)
 
     @property
     def display_name(self) -> str:
@@ -57,6 +105,33 @@ class Sample:
 
 def new_sample() -> Sample:
     return Sample(text=BLANK_PNL)
+
+
+def parse_constructs(text: str) -> list[str]:
+    items: list[str] = []
+    for chunk in text.replace("\n", ",").split(","):
+        item = chunk.strip()
+        if item:
+            items.append(item)
+    return items
+
+
+def meta_from_sidecar(data: dict) -> SampleMeta:
+    values: dict = {}
+    extra: dict = {}
+    present: set[str] = set()
+    for key, value in data.items():
+        if key in RESERVED_SIDECAR_KEYS:
+            continue
+        if key == "constructs":
+            present.add(key)
+            values[key] = _as_str_list(value)
+        elif key in META_FIELDS:
+            present.add(key)
+            values[key] = value if isinstance(value, str) else ("" if value is None else str(value))
+        else:
+            extra[key] = value
+    return SampleMeta(**values, extra=extra, present=frozenset(present))
 
 
 def sidecar_path_for(pnl_path: Path) -> Path:
@@ -110,11 +185,17 @@ def save_sample(sample: Sample, dest: str | Path | None = None) -> Sample:
         expected = _copy_reference(sample.expected_path, pnl_path)
         expected_ref = expected.name if expected is not None else None
 
-    payload = {
-        "version": SAMPLE_VERSION,
-        "pnl": pnl_path.name,
-        "expected": expected_ref,
-    }
+    meta = sample.meta
+    if not meta.id:
+        meta = replace(meta, id=pnl_path.stem)
+    payload = _ordered_sidecar(
+        {
+            "version": SAMPLE_VERSION,
+            "pnl": pnl_path.name,
+            "expected": expected_ref,
+            **meta.to_sidecar_fields(),
+        }
+    )
     sidecar.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return Sample(
         text=sample.text,
@@ -122,6 +203,7 @@ def save_sample(sample: Sample, dest: str | Path | None = None) -> Sample:
         expected_path=expected,
         sidecar_path=sidecar,
         expected_ref=expected_ref,
+        meta=meta,
     )
 
 
@@ -176,11 +258,13 @@ def _load_pnl(path: Path) -> Sample:
     expected: Path | None = None
     sidecar_path: Path | None = None
     expected_ref: str | None = None
+    meta = SampleMeta()
     if sidecar.is_file():
         sidecar_path = sidecar
         data = _read_sidecar_data(sidecar)
         expected_ref = _expected_ref(data)
         expected = _resolve_existing(sidecar.parent, expected_ref)
+        meta = meta_from_sidecar(data)
     if expected is None:
         expected = _sibling_png(path)
     return Sample(
@@ -189,6 +273,7 @@ def _load_pnl(path: Path) -> Sample:
         expected_path=expected,
         sidecar_path=sidecar_path,
         expected_ref=expected_ref,
+        meta=meta,
     )
 
 
@@ -212,6 +297,7 @@ def _load_sidecar(path: Path) -> Sample:
         expected_path=expected,
         sidecar_path=path,
         expected_ref=expected_ref,
+        meta=meta_from_sidecar(data),
     )
 
 
@@ -252,6 +338,25 @@ def _resolve_existing(base: Path, name: object) -> Path | None:
 def _sibling_png(pnl_path: Path) -> Path | None:
     sibling = pnl_path.with_suffix(".png")
     return sibling if sibling.is_file() else None
+
+
+def _as_str_list(value: object) -> list[str]:
+    if isinstance(value, str):
+        return parse_constructs(value)
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
+
+
+def _ordered_sidecar(payload: dict) -> dict:
+    ordered: dict = {}
+    for key in SIDECAR_FIELD_ORDER:
+        if key in payload:
+            ordered[key] = payload[key]
+    for key, value in payload.items():
+        if key not in ordered:
+            ordered[key] = value
+    return ordered
 
 
 def _copy_reference(expected: Path | None, pnl_path: Path) -> Path | None:

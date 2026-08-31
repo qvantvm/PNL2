@@ -28,5 +28,13 @@ def test_sample_studio_smoke():
     studio.editor.setPlainText(BLANK_PNL)
     assert studio.editor.toPlainText().startswith("pnl/2")
     assert studio._combo.count() >= 0
+    assert studio._editor_tabs.count() == 2
+    assert studio.meta_title.text() == ""
+    assert not studio.dirty
+    studio.meta_title.setText("A title")
+    assert studio.dirty
+    studio.meta_title.setText("")
+    assert not studio.dirty
+    studio.fit_engraving()
     studio.close()
     del app

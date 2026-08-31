@@ -10,6 +10,7 @@ from pnl2.studio.sample import (
     list_samples,
     load_sample,
     new_sample,
+    parse_constructs,
     save_sample,
     sidecar_path_for,
 )
@@ -142,6 +143,51 @@ def test_save_in_place_preserves_expected_ref(tmp_path: Path):
     assert pnl.read_text(encoding="utf-8") == sample.text
 
 
+def test_parse_constructs():
+    assert parse_constructs("chord, V-I,  root_progression") == [
+        "chord",
+        "V-I",
+        "root_progression",
+    ]
+
+
+def test_load_and_save_preserves_metadata(tmp_path: Path):
+    pnl, _png, ref = _harmony_layout(tmp_path)
+    sidecar = sidecar_path_for(pnl)
+    extra = {
+        "version": 1,
+        "pnl": "example-3-01.pnl",
+        "expected": ref,
+        "id": "example-3-01",
+        "split": "train",
+        "task": "program",
+        "title": "V–I Root Motion",
+        "caption": "Triads with roots a fourth apart.",
+        "image": "ch03/page_002/homr_crops/r10_example_3_l1.png",
+        "source": "book",
+        "source_id": "ch03/page_002",
+        "example_id": "3-1",
+        "constructs": ["chord", "root_progression", "V-I"],
+        "n_measures": 2,
+    }
+    sidecar.write_text(json.dumps(extra, indent=2) + "\n", encoding="utf-8")
+    sample = load_sample(pnl)
+    assert sample.meta.title == "V–I Root Motion"
+    assert sample.meta.constructs == ["chord", "root_progression", "V-I"]
+    assert sample.meta.extra["n_measures"] == 2
+    sample.meta.title = "V to I"
+    sample.meta.caption = "Rewritten caption."
+    sample.meta.constructs = ["chord", "cadence"]
+    saved = save_sample(sample, sample.pnl_path)
+    data = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert data["expected"] == ref
+    assert data["title"] == "V to I"
+    assert data["caption"] == "Rewritten caption."
+    assert data["constructs"] == ["chord", "cadence"]
+    assert data["n_measures"] == 2
+    assert saved.meta.title == "V to I"
+
+
 def test_list_samples(tmp_path: Path):
     (tmp_path / "b.pnl").write_text(BLANK_PNL, encoding="utf-8")
     (tmp_path / "a.pnl").write_text(BLANK_PNL, encoding="utf-8")
@@ -180,3 +226,5 @@ def test_load_harmony_dataset_sidecar():
     assert sample.expected_path.is_file()
     assert sample.expected_ref is not None
     assert sample.expected_ref.startswith("../../")
+    assert sample.meta.title
+    assert sample.meta.constructs

@@ -8,10 +8,12 @@ from pathlib import Path
 
 from .sample import (
     Sample,
+    SampleMeta,
     default_samples_dir,
     list_samples,
     load_sample,
     new_sample,
+    parse_constructs,
     save_sample,
 )
 from .worker import RenderResult, render_source
@@ -63,6 +65,7 @@ class SampleStudio:
             QSlider,
             QSplitter,
             QStatusBar,
+            QTabWidget,
             QToolBar,
             QVBoxLayout,
             QWidget,
@@ -89,7 +92,10 @@ class SampleStudio:
 
         self.sample = new_sample()
         self._saved_text = self.sample.text
+        self._saved_meta = self.sample.meta.to_sidecar_fields()
         self._last_svg: str | None = None
+        self._svg_native = None
+        self._svg_zoom = 1.0
         self._job_id = 0
         self._threads: list = []
         self._library_dir: Path | None = None
@@ -111,16 +117,28 @@ class SampleStudio:
 
         self.preview_box = QGroupBox("Live engraving")
         self.svg_widget = QSvgWidget()
-        self.svg_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.svg_widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.svg_widget.setStyleSheet("background: white;")
         self.svg_widget.setAutoFillBackground(True)
-        svg_scroll = QScrollArea()
-        svg_scroll.setWidget(self.svg_widget)
-        svg_scroll.setWidgetResizable(True)
-        svg_scroll.setStyleSheet("QScrollArea { background: white; border: none; }")
-        svg_scroll.viewport().setStyleSheet("background: white;")
+        self._svg_scroll = QScrollArea()
+        self._svg_scroll.setWidget(self.svg_widget)
+        self._svg_scroll.setWidgetResizable(False)
+        self._svg_scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._svg_scroll.setStyleSheet("QScrollArea { background: white; border: none; }")
+        self._svg_scroll.viewport().setStyleSheet("background: white;")
+        svg_zoom_row = QHBoxLayout()
+        self.svg_zoom_slider = QSlider(Qt.Orientation.Horizontal)
+        self.svg_zoom_slider.setRange(25, 400)
+        self.svg_zoom_slider.setValue(100)
+        self.svg_zoom_slider.valueChanged.connect(self._on_svg_zoom)
+        svg_fit_btn = QPushButton("Fit")
+        svg_fit_btn.clicked.connect(self.fit_engraving)
+        svg_zoom_row.addWidget(QLabel("Zoom"))
+        svg_zoom_row.addWidget(self.svg_zoom_slider)
+        svg_zoom_row.addWidget(svg_fit_btn)
         preview_layout = QVBoxLayout(self.preview_box)
-        preview_layout.addWidget(svg_scroll)
+        preview_layout.addWidget(self._svg_scroll, 1)
+        preview_layout.addLayout(svg_zoom_row)
 
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
@@ -150,9 +168,14 @@ class SampleStudio:
         ref_layout.addWidget(ref_scroll, 1)
         ref_layout.addLayout(zoom_row)
 
-        editor_box = QGroupBox("PNL/2 script")
-        editor_layout = QVBoxLayout(editor_box)
+        editor_page = QWidget()
+        editor_layout = QVBoxLayout(editor_page)
+        editor_layout.setContentsMargins(0, 0, 0, 0)
         editor_layout.addWidget(self.editor)
+        meta_page = self._build_meta_form(font)
+        self._editor_tabs = QTabWidget()
+        self._editor_tabs.addTab(editor_page, "PNL/2 script")
+        self._editor_tabs.addTab(meta_page, "Metadata")
 
         log_box = QGroupBox("Parser / engraver log")
         log_layout = QVBoxLayout(log_box)
@@ -161,7 +184,7 @@ class SampleStudio:
         vsplit = QSplitter(Qt.Orientation.Vertical)
         htop = QSplitter(Qt.Orientation.Horizontal)
         hbot = QSplitter(Qt.Orientation.Horizontal)
-        htop.addWidget(editor_box)
+        htop.addWidget(self._editor_tabs)
         htop.addWidget(self.preview_box)
         hbot.addWidget(log_box)
         hbot.addWidget(self.ref_box)
@@ -255,6 +278,14 @@ class SampleStudio:
         self._act_render.setShortcut(QKeySequence("Ctrl+R"))
         self._act_render.triggered.connect(self.render_now)
         view_menu.addAction(self._act_render)
+        self._act_fit_svg = QAction("Fit &Engraving", self.window)
+        self._act_fit_svg.setShortcut(QKeySequence("Ctrl+0"))
+        self._act_fit_svg.triggered.connect(self.fit_engraving)
+        self._act_fit_ref = QAction("Fit &Reference", self.window)
+        self._act_fit_ref.setShortcut(QKeySequence("Ctrl+Shift+0"))
+        self._act_fit_ref.triggered.connect(self._fit_reference)
+        view_menu.addAction(self._act_fit_svg)
+        view_menu.addAction(self._act_fit_ref)
         view_menu.addSeparator()
         view_menu.addAction(self._act_prev)
         view_menu.addAction(self._act_next)
@@ -267,7 +298,7 @@ class SampleStudio:
 
     @property
     def dirty(self) -> bool:
-        return self.editor.toPlainText() != self._saved_text
+        return self.editor.toPlainText() != self._saved_text or self._meta_snapshot() != self._saved_meta
 
     def new_document(self) -> None:
         if not self._confirm_discard():
@@ -439,6 +470,7 @@ class SampleStudio:
 
     def _write_sample(self, dest: Path) -> bool:
         self.sample.text = self.editor.toPlainText()
+        self.sample.meta = self._meta_from_form()
         try:
             self.sample = save_sample(self.sample, dest)
         except OSError as exc:
@@ -446,6 +478,8 @@ class SampleStudio:
             self._append_log(f"save error: {exc}")
             return False
         self._saved_text = self.sample.text
+        self._fill_meta_form(self.sample)
+        self._saved_meta = self._meta_snapshot()
         self._update_title()
         self._append_log(f"saved {self.sample.display_name}")
         if self.sample.pnl_path is not None:
@@ -458,7 +492,9 @@ class SampleStudio:
         self.editor.blockSignals(True)
         self.editor.setPlainText(sample.text)
         self.editor.blockSignals(False)
+        self._fill_meta_form(sample)
         self._saved_text = sample.text if saved else None
+        self._saved_meta = self._meta_snapshot() if saved else None
         self._set_reference(sample.expected_path)
         self._update_title()
 
@@ -472,6 +508,8 @@ class SampleStudio:
                 f"Missing reference:\n{missing}" if missing else "No reference image loaded"
             )
             self.ref_box.setTitle("Reference image")
+            if hasattr(self, "meta_expected"):
+                self.meta_expected.setText(missing or "")
             return
         pix = self._QPixmap(str(path))
         if pix.isNull():
@@ -482,11 +520,35 @@ class SampleStudio:
         label = self.sample.expected_ref or path.name
         self.ref_box.setTitle(f"Reference image — {Path(label).name}")
         self.ref_label.setText("")
+        if hasattr(self, "meta_expected"):
+            self.meta_expected.setText(self.sample.expected_ref or str(path))
         self._apply_zoom()
 
     def _on_zoom(self, value: int) -> None:
         self._zoom = value / 100.0
         self._apply_zoom()
+
+    def _on_svg_zoom(self, value: int) -> None:
+        self._svg_zoom = value / 100.0
+        self._apply_svg_zoom()
+
+    def fit_engraving(self) -> None:
+        if self._svg_native is None or self._svg_native.width() <= 0:
+            return
+        avail = self._svg_scroll.viewport().size()
+        if avail.width() <= 0 or avail.height() <= 0:
+            return
+        factor = min(avail.width() / self._svg_native.width(), avail.height() / self._svg_native.height())
+        factor = max(0.25, min(4.0, factor))
+        self.svg_zoom_slider.setValue(int(factor * 100))
+
+    def _apply_svg_zoom(self) -> None:
+        if self._svg_native is None or self._svg_native.width() <= 0:
+            return
+        self.svg_widget.resize(
+            max(1, int(self._svg_native.width() * self._svg_zoom)),
+            max(1, int(self._svg_native.height() * self._svg_zoom)),
+        )
 
     def _fit_reference(self) -> None:
         if self.ref_pix is None or self.ref_pix.isNull():
@@ -544,7 +606,8 @@ class SampleStudio:
         if renderer is not None:
             size = renderer.defaultSize()
             if size.width() > 0:
-                self.svg_widget.setMinimumSize(size)
+                self._svg_native = size
+                self._apply_svg_zoom()
 
     def _append_log(self, message: str) -> None:
         stamp = datetime.now().strftime("%H:%M:%S")
@@ -632,6 +695,126 @@ class SampleStudio:
         self._act_next.setEnabled(0 <= current < len(self._sample_paths) - 1)
         n = len(self._sample_paths)
         self.window.statusBar().showMessage(f"{n} sample{'s' if n != 1 else ''} in {directory.name}", 4000)
+
+    def _build_meta_form(self, font) -> object:
+        from PyQt6.QtWidgets import (
+            QComboBox,
+            QFormLayout,
+            QFrame,
+            QLineEdit,
+            QPlainTextEdit,
+            QScrollArea,
+            QWidget,
+        )
+
+        page = QWidget()
+        form = QFormLayout(page)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        self.meta_id = QLineEdit()
+        self.meta_title = QLineEdit()
+        self.meta_caption = QPlainTextEdit()
+        self.meta_caption.setFont(font)
+        self.meta_caption.setMinimumHeight(90)
+        self.meta_constructs = QLineEdit()
+        self.meta_constructs.setPlaceholderText("comma-separated, e.g. chord, V-I")
+        self.meta_split = QComboBox()
+        self.meta_split.setEditable(True)
+        self.meta_split.addItems(["", "train", "val", "test"])
+        self.meta_task = QLineEdit()
+        self.meta_example_id = QLineEdit()
+        self.meta_source = QLineEdit()
+        self.meta_source_id = QLineEdit()
+        self.meta_image = QLineEdit()
+        self.meta_expected = QLineEdit()
+        self.meta_expected.setReadOnly(True)
+        rows = (
+            ("ID", self.meta_id),
+            ("Title", self.meta_title),
+            ("Caption", self.meta_caption),
+            ("Constructs", self.meta_constructs),
+            ("Split", self.meta_split),
+            ("Task", self.meta_task),
+            ("Example ID", self.meta_example_id),
+            ("Source", self.meta_source),
+            ("Source ID", self.meta_source_id),
+            ("Image", self.meta_image),
+            ("Expected", self.meta_expected),
+        )
+        for label, widget in rows:
+            form.addRow(label, widget)
+        for widget in (
+            self.meta_id,
+            self.meta_title,
+            self.meta_constructs,
+            self.meta_task,
+            self.meta_example_id,
+            self.meta_source,
+            self.meta_source_id,
+            self.meta_image,
+        ):
+            widget.textChanged.connect(self._on_meta_changed)
+        self.meta_caption.textChanged.connect(self._on_meta_changed)
+        self.meta_split.editTextChanged.connect(self._on_meta_changed)
+        scroll = QScrollArea()
+        scroll.setWidget(page)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        return scroll
+
+    def _fill_meta_form(self, sample: Sample) -> None:
+        meta = sample.meta
+        widgets = (
+            self.meta_id,
+            self.meta_title,
+            self.meta_caption,
+            self.meta_constructs,
+            self.meta_task,
+            self.meta_example_id,
+            self.meta_source,
+            self.meta_source_id,
+            self.meta_image,
+            self.meta_expected,
+        )
+        for widget in widgets:
+            widget.blockSignals(True)
+        self.meta_split.blockSignals(True)
+        self.meta_id.setText(meta.id)
+        self.meta_title.setText(meta.title)
+        self.meta_caption.setPlainText(meta.caption)
+        self.meta_constructs.setText(", ".join(meta.constructs))
+        self.meta_split.setCurrentText(meta.split)
+        self.meta_task.setText(meta.task)
+        self.meta_example_id.setText(meta.example_id)
+        self.meta_source.setText(meta.source)
+        self.meta_source_id.setText(meta.source_id)
+        self.meta_image.setText(meta.image)
+        self.meta_expected.setText(sample.expected_ref or "")
+        for widget in widgets:
+            widget.blockSignals(False)
+        self.meta_split.blockSignals(False)
+
+    def _meta_from_form(self) -> SampleMeta:
+        return SampleMeta(
+            id=self.meta_id.text().strip(),
+            split=self.meta_split.currentText().strip(),
+            task=self.meta_task.text().strip(),
+            title=self.meta_title.text().strip(),
+            caption=self.meta_caption.toPlainText().strip(),
+            image=self.meta_image.text().strip(),
+            source=self.meta_source.text().strip(),
+            source_id=self.meta_source_id.text().strip(),
+            example_id=self.meta_example_id.text().strip(),
+            constructs=parse_constructs(self.meta_constructs.text()),
+            extra=dict(self.sample.meta.extra),
+            present=self.sample.meta.present,
+        )
+
+    def _meta_snapshot(self) -> dict:
+        return self._meta_from_form().to_sidecar_fields()
+
+    def _on_meta_changed(self) -> None:
+        self.sample.meta = self._meta_from_form()
+        self._update_title()
 
     def _on_combo(self, index: int) -> None:
         if index < 0 or index >= len(self._sample_paths):
