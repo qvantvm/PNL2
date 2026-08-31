@@ -101,6 +101,7 @@ def _convert_part(part: Node, pid: str) -> Element:
     keys = [n for n in _iter(part) if n.kind == "key"]
     clefs = [n for n in _iter(part) if n.kind == "clef"]
     dynamics = [n for n in _iter(part) if n.kind == "dynamic"]
+    romans = [n for n in _iter(part) if n.kind == "roman"]
     event_onsets = _index_event_onsets(part, staff_index)
     pedal_staff = len(staff_names) if staff_names else 1
 
@@ -153,6 +154,16 @@ def _convert_part(part: Node, pid: str) -> Element:
             if _pos_measure(dyn.props.get("at")) == measure.number:
                 _emit_dynamic_direction(m_el, dyn, staff_index)
 
+        _emit_romans_for_measure(
+            m_el,
+            romans,
+            measure.number or 1,
+            event_onsets,
+            divisions,
+            keys,
+            staff_index,
+            pedal_staff,
+        )
         marks = _span_marks_for_measure(
             measure.number or 1,
             pedals,
@@ -800,6 +811,97 @@ def _emit_span_mark(measure: Element, mark: _SpanMark) -> None:
     ET.SubElement(dtype, "octave-shift", **attrs)
     if mark.staff:
         ET.SubElement(direction, "staff").text = str(mark.staff)
+
+
+ROMAN_UPPER = ("I", "II", "III", "IV", "V", "VI", "VII")
+ROMAN_LOWER = ("i", "ii", "iii", "iv", "v", "vi", "vii")
+INVERSION_INDEX = {"root": 0, "third": 1, "fifth": 2, "seventh": 3}
+TRIAD_FIGURES = {"root": "", "third": "6", "fifth": "64", "seventh": "64"}
+SEVENTH_FIGURES = {"root": "7", "third": "65", "fifth": "43", "seventh": "42"}
+
+
+def _key_at_measure(keys: list[Node], measure_number: int) -> tuple[str, str]:
+    chosen = ("C", "major")
+    for key in keys:
+        at = _pos_measure(key.props.get("at")) or 1
+        if at <= measure_number:
+            chosen = (str(key.props.get("tonic", "C")), str(key.props.get("mode", "major")))
+    return chosen
+
+
+def roman_label(node: Node, fallback_key: tuple[str, str] = ("C", "major")) -> str:
+    """Render a PNL `roman` event as figured-bass style text (V7, I6, ii°)."""
+    degree = node.props.get("degree")
+    if not isinstance(degree, int) or not 1 <= degree <= 7:
+        degree = 1
+    quality = str(node.props.get("quality") or "major").lower()
+    seventh = bool(node.props.get("seventh"))
+    inversion = str(node.props.get("inversion") or "root").lower()
+    if quality in ("minor", "diminished", "half-diminished", "half_diminished"):
+        base = ROMAN_LOWER[degree - 1]
+    else:
+        base = ROMAN_UPPER[degree - 1]
+    if quality in ("diminished", "dim"):
+        base += "°"
+    elif quality in ("half-diminished", "half_diminished"):
+        base += "ø"
+    elif quality == "augmented":
+        base += "+"
+    figures = SEVENTH_FIGURES if seventh else TRIAD_FIGURES
+    text = base + figures.get(inversion, "")
+    target = node.props.get("target-degree")
+    if isinstance(target, int) and 1 <= target <= 7:
+        tqual = str(node.props.get("target-quality") or "major").lower()
+        tbase = ROMAN_LOWER[target - 1] if tqual in ("minor", "diminished") else ROMAN_UPPER[target - 1]
+        text = f"{text}/{tbase}"
+    return text
+
+
+def _emit_romans_for_measure(
+    measure: Element,
+    romans: list[Node],
+    measure_number: int,
+    onsets: dict[str, tuple[int, Fraction, int]],
+    divisions: int,
+    keys: list[Node],
+    staff_index: dict[str, int],
+    pedal_staff: int,
+) -> None:
+    fallback = _key_at_measure(keys, measure_number)
+    placed: list[tuple[Fraction, Node, int | None]] = []
+    for roman in romans:
+        start = _resolve_point(roman.props.get("at") or roman.props.get("from"), onsets)
+        if start is None or start[0] != measure_number:
+            continue
+        staff = _staff_number(roman.props.get("staff"), staff_index, pedal_staff)
+        placed.append((start[1], roman, staff))
+    placed.sort(key=lambda item: item[0])
+    for offset, roman, staff in placed:
+        _emit_roman_harmony(measure, roman, staff, fallback, offset, divisions)
+
+
+def _emit_roman_harmony(
+    measure: Element,
+    roman: Node,
+    staff: int | None,
+    fallback_key: tuple[str, str],
+    offset: Fraction = Fraction(0),
+    divisions: int = 1,
+) -> None:
+    label = roman_label(roman, fallback_key)
+    # Verovio prefixes <root-step> onto kind/@text (G + V7 → "GV7").
+    # kind=other with no root prints the numeral alone under the staff.
+    harmony = ET.SubElement(measure, "harmony", placement="below")
+    ET.SubElement(harmony, "function").text = label
+    kind = ET.SubElement(harmony, "kind", text=label)
+    kind.text = "other"
+    inversion = INVERSION_INDEX.get(str(roman.props.get("inversion") or "root").lower())
+    if inversion:
+        ET.SubElement(harmony, "inversion").text = str(inversion)
+    if offset > 0:
+        ET.SubElement(harmony, "offset").text = str(_to_div(offset, divisions))
+    if staff:
+        ET.SubElement(harmony, "staff").text = str(staff)
 
 
 def _emit_pedal(measure: Element, ptype: str, staff: int | None = None) -> None:

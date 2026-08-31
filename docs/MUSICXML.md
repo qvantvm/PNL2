@@ -82,12 +82,12 @@ Preserved when both sides support the construct:
 
 Not yet fully round-tripped (may be dropped or approximated):
 
-- analytical layers (`roman`, `harmonic-edge`, `cadence`, …)
+- other analytical layers (`harmonic-edge`, `cadence`, …)
 - performance millisecond data (`performed-note`, `pedal-curve` with `at-ms`)
 - microtonal `cents`
 - hierarchical form analysis
 
-These remain valid PNL/2 and are kept on convert-from-MusicXML only when sourced from MusicXML; analytical layers authored in PNL are preserved by the PNL parser/serializer but omitted from MusicXML export unless a future extension maps them to MusicXML harmony/analysis elements.
+`roman` events export as MusicXML `<harmony placement="below">` on the lowest staff (`<function>` plus `kind text="…" type="other"`) so Verovio prints the figured numeral (V7, I6, ii°) under the bass staff. A MusicXML `<root>` is omitted on purpose: Verovio would prefix the root letter onto the numeral. Import still maps MusicXML `<harmony>` to `chord-symbol`, so roman is not a lossless round-trip.
 
 ## CLI
 

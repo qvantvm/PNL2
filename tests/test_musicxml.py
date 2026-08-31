@@ -90,6 +90,52 @@ def test_musicxml_ottava_pedal_fingering_grace():
     assert "<trill-mark" in xml
 
 
+ROMAN_PNL = """pnl/2
+score {
+    meta {
+        title="Romans"
+        profile=[core,notation,analysis]
+    }
+    part piano instrument=piano staves=2 {
+        meter at=1:0 beats=4 beat-unit=1/4
+        key at=1:0 tonic=C mode=major
+        measure 1 {
+            staff RH {
+                voice RH1 {
+                    note n1 pitch=G4 dur=1/2
+                    note n2 pitch=C5 dur=1/2
+                }
+            }
+            staff LH {
+                voice LH1 {
+                    note n3 pitch=G2 dur=1/2
+                    note n4 pitch=C3 dur=1/2
+                }
+            }
+        }
+        roman rn1 from=1:0 to=1:1/2 degree=5 quality=dominant seventh=true key=C:major
+        roman rn2 from=1:1/2 to=1:1 degree=1 quality=major inversion=third key=C:major
+        roman rn3 at=1:0 degree=2 quality=diminished target-degree=5 key=C:major
+    }
+}
+"""
+
+
+def test_pnl_to_musicxml_roman_harmony():
+    from pnl2.musicxml.to_musicxml import roman_label
+    from pnl2.ast import Node
+
+    xml = pnl_to_musicxml(ROMAN_PNL)
+    assert "<harmony" in xml
+    assert 'placement="below"' in xml
+    assert 'text="V7"' in xml
+    assert 'text="I6"' in xml
+    assert 'text="ii°/V"' in xml
+    assert "<offset>" in xml
+    assert "<staff>2</staff>" in xml
+    assert roman_label(Node(kind="roman", id="r", props={"degree": 5, "quality": "dominant", "seventh": True})) == "V7"
+
+
 def test_document_api():
     xml = (EXAMPLES / "simple.musicxml").read_text(encoding="utf-8")
     doc = musicxml_to_document(xml)

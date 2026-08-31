@@ -200,6 +200,7 @@ PNL/2 separates chord symbols, Roman numerals, and pitch structure:
 ```text
 chord-symbol cs1 at=1:0 root=C quality=dominant extension=13 bass=Bb alter=[b9,#11]
 roman rn1 from=1:0 to=1:1/2 degree=5 quality=dominant seventh=true inversion=third key=D:major
+# Engraves under the lowest staff as V65 (figured numeral).
 harmonic-edge he1 from=rn1 to=rn2 relation=resolves-to
 cadence cad1 from=4:0 to=4:1 type=perfect-authentic key=C:major
 ```

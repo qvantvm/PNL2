@@ -297,6 +297,44 @@ def test_engrave_examples_svg(name):
         assert 'id="smufl-ECA5"' in joined
 
 
+def test_engrave_roman_numerals_visible():
+    pytest.importorskip("verovio")
+    from pnl2.musicxml.to_musicxml import pnl_to_musicxml
+
+    pnl = """pnl/2
+score {
+    meta { profile=[core,notation,analysis] }
+    part piano instrument=piano staves=2 {
+        meter at=1:0 beats=4 beat-unit=1/4
+        key at=1:0 tonic=C mode=major
+        measure 1 {
+            staff RH {
+                voice RH1 {
+                    note n1 pitch=G4 dur=1/2
+                    note n2 pitch=C5 dur=1/2
+                }
+            }
+            staff LH {
+                voice LH1 {
+                    note n3 pitch=G2 dur=1/2
+                    note n4 pitch=C3 dur=1/2
+                }
+            }
+        }
+        roman rn1 from=1:0 to=1:1/2 degree=5 quality=dominant seventh=true key=C:major
+        roman rn2 from=1:1/2 to=1:1 degree=1 quality=major key=C:major
+    }
+}
+"""
+    xml = pnl_to_musicxml(pnl)
+    assert 'text="V7"' in xml
+    assert "<function>V7</function>" in xml
+    pages = engrave_svg(pnl)
+    joined = "\n".join(pages)
+    assert "V7" in joined
+    assert re.search(r">I<", joined)
+
+
 def test_render_reused_across_threads():
     pytest.importorskip("verovio")
     import threading
