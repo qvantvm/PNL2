@@ -52,6 +52,7 @@ pnl2 parse score.pnl --canonical -o score.canonical.pnl
 # Sample studio (edit / live-engrave / compare to a reference image)
 pnl2 studio
 pnl2 studio examples/simple.pnl
+pnl2 studio /path/to/harmony_dataset/samples
 ```
 
 ## Library
@@ -78,11 +79,14 @@ Four-pane editor for dataset samples: PNL script (top-left), live Verovio previe
 
 ```bash
 pnl2 studio
+pnl2 studio /path/to/harmony_dataset/samples
 # or
 python -m pnl2.studio examples/simple.pnl
 ```
 
-Save writes `name.pnl`, optional `name.png` (the attached reference), and `name.sample.json` so the pair can be reopened later. New work defaults to the `samples/` folder.
+The studio opens a dataset folder (File → Open Dataset Folder, or pass a directory on the CLI) and lists every `.pnl` in it. Sidecar `expected` paths are resolved relative to the sidecar, including pointers like `../../ch03/page_002/homr_crops/….png`. Previous/Next (Ctrl+[ / Ctrl+]) steps through the folder.
+
+Save updates the `.pnl` in place and keeps an existing sidecar `expected` path — it does not copy the crop into the samples folder. Save As still writes `name.pnl`, optional `name.png`, and `name.sample.json`. `PNL2_SAMPLES_DIR` overrides the default library; otherwise the studio prefers a folder that already has samples (the harmony extraction dataset when present, then `./samples`).
 
 ## Layout
 

@@ -27,5 +27,6 @@ def test_sample_studio_smoke():
     studio = SampleStudio()
     studio.editor.setPlainText(BLANK_PNL)
     assert studio.editor.toPlainText().startswith("pnl/2")
+    assert studio._combo.count() >= 0
     studio.close()
     del app

@@ -63,7 +63,12 @@ def main(argv: list[str] | None = None) -> int:
     p_eng.add_argument("--page-height", type=int, dest="page_height", help="Verovio pageHeight")
 
     p_studio = sub.add_parser("studio", help="Open the sample authoring studio")
-    p_studio.add_argument("path", type=Path, nargs="?", help="Optional .pnl or .sample.json")
+    p_studio.add_argument(
+        "path",
+        type=Path,
+        nargs="?",
+        help="Optional .pnl, .sample.json, or samples directory",
+    )
 
     args = parser.parse_args(argv)
 

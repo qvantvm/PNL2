@@ -6,6 +6,8 @@ import pytest
 from pnl2.studio.sample import (
     BLANK_PNL,
     Sample,
+    default_samples_dir,
+    list_samples,
     load_sample,
     new_sample,
     save_sample,
@@ -92,3 +94,89 @@ def test_load_missing_file(tmp_path: Path):
 def test_save_requires_destination():
     with pytest.raises(ValueError, match="destination"):
         save_sample(Sample(text=BLANK_PNL))
+
+
+def _harmony_layout(tmp_path: Path) -> tuple[Path, Path, str]:
+    crops = tmp_path / "ch03" / "page_002" / "homr_crops"
+    crops.mkdir(parents=True)
+    png = crops / "r10_example_3_l1.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\nref")
+    samples = tmp_path / "harmony_dataset" / "samples"
+    samples.mkdir(parents=True)
+    pnl = samples / "example-3-01.pnl"
+    pnl.write_text(BLANK_PNL, encoding="utf-8")
+    ref = "../../ch03/page_002/homr_crops/r10_example_3_l1.png"
+    sidecar = sidecar_path_for(pnl)
+    sidecar.write_text(
+        json.dumps({"version": 1, "pnl": "example-3-01.pnl", "expected": ref}),
+        encoding="utf-8",
+    )
+    return pnl, png, ref
+
+
+def test_load_sidecar_relative_expected(tmp_path: Path):
+    pnl, png, ref = _harmony_layout(tmp_path)
+    sample = load_sample(sidecar_path_for(pnl))
+    assert sample.pnl_path == pnl.resolve()
+    assert sample.expected_path == png.resolve()
+    assert sample.expected_ref == ref
+
+
+def test_load_pnl_uses_sidecar_relative_expected(tmp_path: Path):
+    pnl, png, ref = _harmony_layout(tmp_path)
+    sample = load_sample(pnl)
+    assert sample.expected_path == png.resolve()
+    assert sample.expected_ref == ref
+
+
+def test_save_in_place_preserves_expected_ref(tmp_path: Path):
+    pnl, png, ref = _harmony_layout(tmp_path)
+    sample = load_sample(pnl)
+    sample.text = BLANK_PNL.replace("Untitled", "Fixed")
+    saved = save_sample(sample, sample.pnl_path)
+    data = json.loads(sidecar_path_for(pnl).read_text(encoding="utf-8"))
+    assert data["expected"] == ref
+    assert not (pnl.parent / "example-3-01.png").exists()
+    assert saved.expected_ref == ref
+    assert saved.expected_path == png.resolve()
+    assert pnl.read_text(encoding="utf-8") == sample.text
+
+
+def test_list_samples(tmp_path: Path):
+    (tmp_path / "b.pnl").write_text(BLANK_PNL, encoding="utf-8")
+    (tmp_path / "a.pnl").write_text(BLANK_PNL, encoding="utf-8")
+    (tmp_path / "notes.txt").write_text("x", encoding="utf-8")
+    assert [path.name for path in list_samples(tmp_path)] == ["a.pnl", "b.pnl"]
+
+
+def test_default_samples_dir_prefers_folder_with_pnl(tmp_path: Path, monkeypatch):
+    empty = tmp_path / "empty"
+    filled = tmp_path / "filled"
+    empty.mkdir()
+    filled.mkdir()
+    (filled / "one.pnl").write_text(BLANK_PNL, encoding="utf-8")
+    monkeypatch.setenv("PNL2_SAMPLES_DIR", str(empty))
+    monkeypatch.setattr(
+        "pnl2.studio.sample.candidate_sample_dirs",
+        lambda: [empty, filled],
+    )
+    assert default_samples_dir() == filled.resolve()
+
+
+HARMONY_SAMPLES = Path(
+    "/Users/donofrio/Vibe-Coding/music_document_dataset_extraction/harmony_dataset/samples"
+)
+
+
+@pytest.mark.skipif(
+    not (HARMONY_SAMPLES / "example-3-01.sample.json").is_file(),
+    reason="harmony dataset not present",
+)
+def test_load_harmony_dataset_sidecar():
+    sample = load_sample(HARMONY_SAMPLES / "example-3-01.sample.json")
+    assert sample.pnl_path is not None
+    assert sample.expected_path is not None
+    assert sample.expected_path.suffix == ".png"
+    assert sample.expected_path.is_file()
+    assert sample.expected_ref is not None
+    assert sample.expected_ref.startswith("../../")

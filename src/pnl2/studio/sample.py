@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
 SIDECAR_SUFFIX = ".sample.json"
 SAMPLE_VERSION = 1
+SAMPLES_DIR_ENV = "PNL2_SAMPLES_DIR"
 
 BLANK_PNL = """pnl/2
 score {
@@ -44,6 +46,7 @@ class Sample:
     pnl_path: Path | None = None
     expected_path: Path | None = None
     sidecar_path: Path | None = None
+    expected_ref: str | None = None
 
     @property
     def display_name(self) -> str:
@@ -76,8 +79,16 @@ def load_sample(path: str | Path) -> Sample:
     raise ValueError(f"Open a .pnl or .sample.json file, not {path.name}")
 
 
+def list_samples(directory: str | Path) -> list[Path]:
+    """Sorted ``.pnl`` scripts in a dataset folder."""
+    directory = Path(directory).expanduser()
+    if not directory.is_dir():
+        return []
+    return sorted(path.resolve() for path in directory.glob("*.pnl") if path.is_file())
+
+
 def save_sample(sample: Sample, dest: str | Path | None = None) -> Sample:
-    """Write ``.pnl``, sidecar JSON, and copy the reference image next to the script."""
+    """Write ``.pnl`` and sidecar. In-place saves keep an existing ``expected`` path."""
     pnl_path = Path(dest) if dest is not None else sample.pnl_path
     if pnl_path is None:
         raise ValueError("Save As requires a destination path")
@@ -88,12 +99,21 @@ def save_sample(sample: Sample, dest: str | Path | None = None) -> Sample:
     pnl_path.parent.mkdir(parents=True, exist_ok=True)
     pnl_path.write_text(sample.text, encoding="utf-8")
 
-    expected = _copy_reference(sample.expected_path, pnl_path)
     sidecar = sidecar_path_for(pnl_path)
+    if _preserve_expected_ref(sample, pnl_path):
+        expected_ref = sample.expected_ref
+        expected = sample.expected_path
+        if expected is None and expected_ref:
+            base = sample.sidecar_path.parent if sample.sidecar_path else sidecar.parent
+            expected = _resolve_existing(base, expected_ref)
+    else:
+        expected = _copy_reference(sample.expected_path, pnl_path)
+        expected_ref = expected.name if expected is not None else None
+
     payload = {
         "version": SAMPLE_VERSION,
         "pnl": pnl_path.name,
-        "expected": expected.name if expected is not None else None,
+        "expected": expected_ref,
     }
     sidecar.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return Sample(
@@ -101,18 +121,53 @@ def save_sample(sample: Sample, dest: str | Path | None = None) -> Sample:
         pnl_path=pnl_path,
         expected_path=expected,
         sidecar_path=sidecar,
+        expected_ref=expected_ref,
     )
 
 
+def candidate_sample_dirs() -> list[Path]:
+    """Search order for dataset folders (env, harmony extraction, cwd, repo)."""
+    dirs: list[Path] = []
+    env = os.environ.get(SAMPLES_DIR_ENV)
+    if env:
+        dirs.append(Path(env).expanduser())
+    vibe = _repo_root().parent.parent
+    dirs.append(vibe / "music_document_dataset_extraction" / "harmony_dataset" / "samples")
+    dirs.append(Path.cwd() / "samples")
+    dirs.append(_repo_root() / "samples")
+    return dirs
+
+
+def existing_sample_dirs() -> list[Path]:
+    seen: list[Path] = []
+    for raw in candidate_sample_dirs():
+        try:
+            path = raw.expanduser().resolve()
+        except OSError:
+            continue
+        if path.is_dir() and path not in seen:
+            seen.append(path)
+    return seen
+
+
 def default_samples_dir() -> Path:
-    """Prefer ``./samples`` in the cwd, then the repo ``samples/`` folder."""
-    cwd = Path.cwd() / "samples"
-    if cwd.is_dir():
-        return cwd
-    repo = Path(__file__).resolve().parents[3] / "samples"
-    if repo.is_dir():
-        return repo
-    return cwd
+    """Prefer a folder that already has ``.pnl`` samples, else the first existing candidate."""
+    existing = existing_sample_dirs()
+    for path in existing:
+        if list_samples(path):
+            return path
+    if existing:
+        return existing[0]
+    return Path.cwd() / "samples"
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def _expected_ref(data: dict) -> str | None:
+    value = data.get("expected")
+    return value if isinstance(value, str) and value else None
 
 
 def _load_pnl(path: Path) -> Sample:
@@ -120,10 +175,12 @@ def _load_pnl(path: Path) -> Sample:
     sidecar = sidecar_path_for(path)
     expected: Path | None = None
     sidecar_path: Path | None = None
+    expected_ref: str | None = None
     if sidecar.is_file():
         sidecar_path = sidecar
         data = _read_sidecar_data(sidecar)
-        expected = _resolve_existing(sidecar.parent, data.get("expected"))
+        expected_ref = _expected_ref(data)
+        expected = _resolve_existing(sidecar.parent, expected_ref)
     if expected is None:
         expected = _sibling_png(path)
     return Sample(
@@ -131,6 +188,7 @@ def _load_pnl(path: Path) -> Sample:
         pnl_path=path,
         expected_path=expected,
         sidecar_path=sidecar_path,
+        expected_ref=expected_ref,
     )
 
 
@@ -144,7 +202,8 @@ def _load_sidecar(path: Path) -> Sample:
     if pnl is None or not pnl.is_file():
         raise FileNotFoundError(f"Sidecar {path.name} does not point to a .pnl file")
     text = pnl.read_text(encoding="utf-8")
-    expected = _resolve_existing(path.parent, data.get("expected"))
+    expected_ref = _expected_ref(data)
+    expected = _resolve_existing(path.parent, expected_ref)
     if expected is None:
         expected = _sibling_png(pnl)
     return Sample(
@@ -152,7 +211,22 @@ def _load_sidecar(path: Path) -> Sample:
         pnl_path=pnl,
         expected_path=expected,
         sidecar_path=path,
+        expected_ref=expected_ref,
     )
+
+
+def _preserve_expected_ref(sample: Sample, pnl_path: Path) -> bool:
+    """Keep a sidecar image pointer when saving the same ``.pnl`` in place."""
+    if not sample.expected_ref or sample.pnl_path is None:
+        return False
+    if Path(sample.pnl_path).resolve() != pnl_path.resolve():
+        return False
+    if sample.expected_path is None or sample.sidecar_path is None:
+        return True
+    resolved = _resolve_existing(sample.sidecar_path.parent, sample.expected_ref)
+    if resolved is not None and resolved != Path(sample.expected_path).resolve():
+        return False
+    return True
 
 
 def _read_sidecar_data(path: Path) -> dict:

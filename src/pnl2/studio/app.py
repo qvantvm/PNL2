@@ -9,6 +9,7 @@ from pathlib import Path
 from .sample import (
     Sample,
     default_samples_dir,
+    list_samples,
     load_sample,
     new_sample,
     save_sample,
@@ -48,6 +49,7 @@ class SampleStudio:
         from PyQt6.QtGui import QAction, QCloseEvent, QFont, QKeySequence, QPixmap
         from PyQt6.QtSvgWidgets import QSvgWidget
         from PyQt6.QtWidgets import (
+            QComboBox,
             QFileDialog,
             QGroupBox,
             QHBoxLayout,
@@ -90,6 +92,8 @@ class SampleStudio:
         self._last_svg: str | None = None
         self._job_id = 0
         self._threads: list = []
+        self._library_dir: Path | None = None
+        self._sample_paths: list[Path] = []
         try:
             from ..engraver import warmup_verovio
 
@@ -179,14 +183,18 @@ class SampleStudio:
         toolbar = QToolBar("Main")
         toolbar.setMovable(False)
         self.window.addToolBar(toolbar)
-        for act in (
-            self._act_new,
-            self._act_open,
-            self._act_save,
-            self._act_ref,
-            self._act_render,
-            self._act_export,
-        ):
+        for act in (self._act_new, self._act_open, self._act_save):
+            toolbar.addAction(act)
+        toolbar.addSeparator()
+        toolbar.addAction(self._act_prev)
+        self._combo = QComboBox()
+        self._combo.setMinimumContentsLength(18)
+        self._combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self._combo.currentIndexChanged.connect(self._on_combo)
+        toolbar.addWidget(self._combo)
+        toolbar.addAction(self._act_next)
+        toolbar.addSeparator()
+        for act in (self._act_ref, self._act_render, self._act_export):
             toolbar.addAction(act)
 
         self._timer = QTimer(self.window)
@@ -206,6 +214,15 @@ class SampleStudio:
         self._act_open = QAction("&Open Sample…", self.window)
         self._act_open.setShortcut(QKeySequence.StandardKey.Open)
         self._act_open.triggered.connect(self.open_sample_dialog)
+        self._act_open_dir = QAction("Open Dataset &Folder…", self.window)
+        self._act_open_dir.setShortcut(QKeySequence("Ctrl+Shift+O"))
+        self._act_open_dir.triggered.connect(self.open_library_dialog)
+        self._act_prev = QAction("&Previous Sample", self.window)
+        self._act_prev.setShortcut(QKeySequence("Ctrl+["))
+        self._act_prev.triggered.connect(lambda: self.step_sample(-1))
+        self._act_next = QAction("&Next Sample", self.window)
+        self._act_next.setShortcut(QKeySequence("Ctrl+]"))
+        self._act_next.triggered.connect(lambda: self.step_sample(1))
         self._act_save = QAction("&Save", self.window)
         self._act_save.setShortcut(QKeySequence.StandardKey.Save)
         self._act_save.triggered.connect(self.save)
@@ -222,6 +239,7 @@ class SampleStudio:
         for act in (
             self._act_new,
             self._act_open,
+            self._act_open_dir,
             self._act_save,
             self._act_save_as,
         ):
@@ -237,6 +255,9 @@ class SampleStudio:
         self._act_render.setShortcut(QKeySequence("Ctrl+R"))
         self._act_render.triggered.connect(self.render_now)
         view_menu.addAction(self._act_render)
+        view_menu.addSeparator()
+        view_menu.addAction(self._act_prev)
+        view_menu.addAction(self._act_next)
 
     def show(self) -> None:
         self.window.show()
@@ -260,13 +281,28 @@ class SampleStudio:
         path, _ = self._QFileDialog.getOpenFileName(
             self.window,
             "Open Sample",
-            str(default_samples_dir()),
+            str(self._start_dir()),
             "PNL/2 samples (*.pnl *.sample.json);;All files (*)",
         )
         if path:
             self.open_path(Path(path))
 
+    def open_library_dialog(self) -> None:
+        if not self._confirm_discard():
+            return
+        path = self._QFileDialog.getExistingDirectory(
+            self.window,
+            "Open Dataset Folder",
+            str(self._start_dir()),
+        )
+        if path:
+            self.open_path(Path(path))
+
     def open_path(self, path: Path) -> None:
+        path = Path(path).expanduser()
+        if path.is_dir():
+            self._open_library(path)
+            return
         try:
             sample = load_sample(path)
         except (OSError, ValueError) as exc:
@@ -274,10 +310,26 @@ class SampleStudio:
             self._append_log(f"open error: {exc}")
             return
         self._apply_sample(sample, saved=True)
+        if sample.pnl_path is not None:
+            self._refresh_library(sample.pnl_path.parent, sample.pnl_path)
         self._append_log(f"opened {sample.display_name}")
         if sample.expected_path:
-            self._append_log(f"reference {sample.expected_path.name}")
+            shown = sample.expected_ref or sample.expected_path.name
+            self._append_log(f"reference {shown}")
+        elif sample.expected_ref:
+            self._append_log(f"reference missing: {sample.expected_ref}")
         self.render_now()
+
+    def step_sample(self, delta: int) -> None:
+        if not self._sample_paths:
+            return
+        current = self._combo.currentIndex()
+        nxt = current + delta
+        if nxt < 0 or nxt >= len(self._sample_paths):
+            return
+        if not self._confirm_discard():
+            return
+        self.open_path(self._sample_paths[nxt])
 
     def save(self) -> bool:
         if self.sample.pnl_path is None:
@@ -288,7 +340,7 @@ class SampleStudio:
         path, _ = self._QFileDialog.getSaveFileName(
             self.window,
             "Save Sample",
-            str((self.sample.pnl_path or default_samples_dir() / "untitled.pnl")),
+            str((self.sample.pnl_path or self._start_dir() / "untitled.pnl")),
             "PNL/2 (*.pnl)",
         )
         if not path:
@@ -299,11 +351,12 @@ class SampleStudio:
         path, _ = self._QFileDialog.getOpenFileName(
             self.window,
             "Load Reference Image",
-            str(default_samples_dir()),
+            str(self._start_dir()),
             "Images (*.png *.jpg *.jpeg *.webp *.bmp);;All files (*)",
         )
         if not path:
             return
+        self.sample.expected_ref = None
         self._set_reference(Path(path))
         self._append_log(f"reference {Path(path).name}")
         self._update_title()
@@ -312,7 +365,7 @@ class SampleStudio:
         if not self._last_svg:
             self._QMessageBox.information(self.window, "Export", "Render a score before exporting.")
             return
-        start = default_samples_dir() / "preview.png"
+        start = self._start_dir() / "preview.png"
         if self.sample.pnl_path:
             start = self.sample.pnl_path.with_name(self.sample.pnl_path.stem + "-preview.png")
         path, _ = self._QFileDialog.getSaveFileName(
@@ -373,6 +426,14 @@ class SampleStudio:
             if path.is_file():
                 self.open_path(path)
                 return
+        last_lib = settings.value("last_library")
+        for candidate in (last_lib, default_samples_dir()):
+            if not candidate:
+                continue
+            directory = Path(str(candidate))
+            if directory.is_dir() and list_samples(directory):
+                self.open_path(directory)
+                return
         self._apply_sample(new_sample(), saved=True)
         self.render_now()
 
@@ -387,6 +448,8 @@ class SampleStudio:
         self._saved_text = self.sample.text
         self._update_title()
         self._append_log(f"saved {self.sample.display_name}")
+        if self.sample.pnl_path is not None:
+            self._refresh_library(self.sample.pnl_path.parent, self.sample.pnl_path)
         self._persist_settings()
         return True
 
@@ -404,7 +467,10 @@ class SampleStudio:
         if path is None or not Path(path).is_file():
             self.ref_pix = None
             self.ref_label.setPixmap(self._QPixmap())
-            self.ref_label.setText("No reference image loaded")
+            missing = self.sample.expected_ref
+            self.ref_label.setText(
+                f"Missing reference:\n{missing}" if missing else "No reference image loaded"
+            )
             self.ref_box.setTitle("Reference image")
             return
         pix = self._QPixmap(str(path))
@@ -413,7 +479,8 @@ class SampleStudio:
             self.ref_label.setText(f"Could not load {path.name}")
             return
         self.ref_pix = pix
-        self.ref_box.setTitle(f"Reference image — {path.name}")
+        label = self.sample.expected_ref or path.name
+        self.ref_box.setTitle(f"Reference image — {Path(label).name}")
         self.ref_label.setText("")
         self._apply_zoom()
 
@@ -519,6 +586,64 @@ class SampleStudio:
         settings.setValue("hbot", self._hbot.saveState())
         if self.sample.pnl_path is not None:
             settings.setValue("last_sample", str(self.sample.pnl_path))
+        if self._library_dir is not None:
+            settings.setValue("last_library", str(self._library_dir))
+
+    def _start_dir(self) -> Path:
+        if self._library_dir is not None and self._library_dir.is_dir():
+            return self._library_dir
+        if self.sample.pnl_path is not None:
+            return self.sample.pnl_path.parent
+        return default_samples_dir()
+
+    def _open_library(self, directory: Path, select: Path | None = None) -> None:
+        directory = Path(directory).expanduser().resolve()
+        paths = list_samples(directory)
+        self._refresh_library(directory, select)
+        target = None
+        if select is not None:
+            wanted = Path(select).resolve()
+            for path in paths:
+                if path == wanted:
+                    target = path
+                    break
+        if target is None and paths:
+            target = paths[0]
+        if target is None:
+            self._append_log(f"no .pnl samples in {directory}")
+            return
+        self.open_path(target)
+
+    def _refresh_library(self, directory: Path, select: Path | None = None) -> None:
+        self._library_dir = directory
+        self._sample_paths = list_samples(directory)
+        self._combo.blockSignals(True)
+        self._combo.clear()
+        current = -1
+        wanted = select.resolve() if select is not None else None
+        for index, path in enumerate(self._sample_paths):
+            self._combo.addItem(path.name, str(path))
+            if wanted is not None and path == wanted:
+                current = index
+        if current >= 0:
+            self._combo.setCurrentIndex(current)
+        self._combo.blockSignals(False)
+        self._act_prev.setEnabled(current > 0)
+        self._act_next.setEnabled(0 <= current < len(self._sample_paths) - 1)
+        n = len(self._sample_paths)
+        self.window.statusBar().showMessage(f"{n} sample{'s' if n != 1 else ''} in {directory.name}", 4000)
+
+    def _on_combo(self, index: int) -> None:
+        if index < 0 or index >= len(self._sample_paths):
+            return
+        path = self._sample_paths[index]
+        if self.sample.pnl_path is not None and path == self.sample.pnl_path.resolve():
+            return
+        if not self._confirm_discard():
+            if self.sample.pnl_path is not None and self._library_dir is not None:
+                self._refresh_library(self._library_dir, self.sample.pnl_path)
+            return
+        self.open_path(path)
 
     def _drop_thread(self, thread) -> None:
         self._threads = [(t, w) for t, w in self._threads if t is not thread]
